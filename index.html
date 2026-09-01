@@ -680,6 +680,37 @@ select{-webkit-appearance:none; appearance:none;
   </div>
 </div>
 
+<!-- ======== welcome / user gate ======== -->
+<div id="authSheet" class="sheet">
+  <div class="sheet-card">
+    <div class="wordmark" style="text-align:center;font-size:17px;margin:10px 0 6px">MEAL<span>SYNC</span></div>
+    <div class="set-note" style="text-align:center;margin:0 0 22px">Snap it, count it, sync it.</div>
+    <div id="authPick">
+      <button id="authNew" class="primary" style="width:100%">I'm new here</button>
+      <button id="authExist" class="ghost small">Existing user</button>
+      <button id="authSkip" class="ghost small" style="border:none;color:var(--ash)">Use without an account</button>
+    </div>
+    <div id="authForm" hidden>
+      <div class="set-row">
+        <label for="authName">Name</label>
+        <input id="authName" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="e.g. joel">
+      </div>
+      <div class="set-row">
+        <label for="authPass">Passcode</label>
+        <div class="keywrap">
+          <input id="authPass" type="password" autocomplete="off" placeholder="4+ characters">
+          <button id="authEye" class="icon-btn" aria-label="Show passcode">
+            <svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+      <button id="authGo" class="primary" style="width:100%">Create my user</button>
+      <button id="authBack" class="ghost small">Back</button>
+      <div class="set-note" id="authNote" style="margin-top:12px"></div>
+    </div>
+  </div>
+</div>
+
 <!-- ======== settings sheet ======== -->
 <div id="setSheet" class="sheet">
   <div class="sheet-card">
@@ -715,32 +746,9 @@ select{-webkit-appearance:none; appearance:none;
     <button id="saveSet" class="primary save-settings">Save settings</button>
 
     <div class="eyebrow">Sync &amp; competition</div>
-    <div class="set-note" style="margin:0 0 12px">Your log always saves to this phone first. With sync on, it also backs up to your Supabase in the background, and your handle joins the leaderboard in Trends. Weights are never shared, only daily calories, protein, burn and whether you hit goal.</div>
-    <div class="set-row">
-      <label for="handleIn">Handle (shown to others)</label>
-      <input id="handleIn" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="e.g. joel">
-    </div>
-    <div class="set-row">
-      <label for="codeIn">Sync code</label>
-      <div class="keywrap">
-        <input id="codeIn" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Leave blank to create one">
-        <button id="codeEye" class="icon-btn" aria-label="Show sync code">
-          <svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
-        </button>
-      </div>
-    </div>
-    <div class="set-note">The sync code is the password for your data. To use a second phone, or come back after clearing the app, enter the same handle and code. Keep a copy somewhere safe.</div>
-    <div class="set-grid">
-      <div class="set-row">
-        <label for="syncUrlIn">Supabase URL</label>
-        <input id="syncUrlIn" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="https://xxxx.supabase.co">
-      </div>
-      <div class="set-row">
-        <label for="syncKeyIn">Anon key</label>
-        <input id="syncKeyIn" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="eyJ...">
-      </div>
-    </div>
-    <div class="set-note" id="syncStat">Sync is off.</div>
+    <div class="set-note" style="margin:0 0 12px">Everything saves to this phone first and backs up to the shared database in the background. Weights and photos never leave the phone; the leaderboard in Trends sees daily calories, protein, burn and goal-hit only.</div>
+    <div class="set-note" id="syncStat">Not signed in.</div>
+    <button id="authAction" class="ghost" style="width:100%">Sign in</button>
 
     <div class="eyebrow">Your data</div>
     <div class="set-btns">
@@ -2113,8 +2121,8 @@ $('#savePro').addEventListener('click', () => {
    the URL and anon key into Settings on the phone. The anon key is
    designed to be public; all table access is locked behind RPCs that
    require your secret sync code. */
-const SYNC_URL_DEFAULT = '';
-const SYNC_KEY_DEFAULT = '';
+const SYNC_URL_DEFAULT = 'https://fbiqmfxxqgykpmnfggxj.supabase.co';
+const SYNC_KEY_DEFAULT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZiaXFtZnh4cWd5a3BtbmZnZ3hqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDIyMDksImV4cCI6MjA5NDc3ODIwOX0.BaOxgYGXMkHG31emN0RNKS3qN9IJ3u_6buILa-Mm8tQ';
 
 function syncCfg(){
   const s = getSettings();
@@ -2122,12 +2130,12 @@ function syncCfg(){
     url: (s.syncUrl || SYNC_URL_DEFAULT).replace(/\/+$/, ''),
     key: s.syncKey || SYNC_KEY_DEFAULT,
     handle: s.syncHandle || '',
-    secret: s.syncSecret || ''
+    pass: s.syncPass || ''
   };
 }
 function syncReady(){
   const c = syncCfg();
-  return !!(c.url && c.key && c.handle && c.secret);
+  return !!(c.url && c.key && c.handle && c.pass);
 }
 async function supa(fn, body){
   const c = syncCfg();
@@ -2183,6 +2191,29 @@ function daySummaries(nDays){
   });
 }
 
+function stripLogForSync(log){
+  const c = JSON.parse(JSON.stringify(log));
+  Object.keys(c).forEach(d => c[d].forEach(m => { delete m.thumb; }));
+  return c;
+}
+function stripFavsForSync(favs){
+  const c = JSON.parse(JSON.stringify(favs));
+  c.forEach(f => { delete f.thumb; });
+  return c;
+}
+function mergeThumbsIntoLog(remote){
+  const local = getLog(), map = {};
+  Object.keys(local).forEach(d => local[d].forEach(m => { if (m.thumb) map[m.id] = m.thumb; }));
+  Object.keys(remote).forEach(d => remote[d].forEach(m => { if (map[m.id]) m.thumb = map[m.id]; }));
+  return remote;
+}
+function mergeThumbsIntoFavs(remote){
+  const local = getFavs(), map = {};
+  local.forEach(f => { if (f.thumb) map[f.id] = f.thumb; });
+  remote.forEach(f => { if (map[f.id]) f.thumb = map[f.id]; });
+  return remote;
+}
+
 let pushT = null, retryT = null, pushing = false;
 function pushSoon(){
   if (!syncReady()) return;
@@ -2197,13 +2228,13 @@ async function doPush(){
   const stamp = new Date().toISOString();
   try {
     const kinds = {
-      log: getLog(), exercise: getEx(), weights: getWeights(),
-      favs: getFavs(), profile: profileLite(getSettings())
+      log: stripLogForSync(getLog()), exercise: getEx(), weights: getWeights(),
+      favs: stripFavsForSync(getFavs()), profile: profileLite(getSettings())
     };
     for (const k of Object.keys(kinds)) {
-      await supa('cc_push_state', { p_secret: c.secret, p_kind: k, p_data: kinds[k], p_updated: stamp });
+      await supa('cc_push_state', { p_handle: c.handle, p_pass: c.pass, p_kind: k, p_data: kinds[k], p_updated: stamp });
     }
-    await supa('cc_push_days', { p_secret: c.secret, p_days: daySummaries(30) });
+    await supa('cc_push_days', { p_handle: c.handle, p_pass: c.pass, p_days: daySummaries(30) });
     const s = getSettings();
     s.syncLast = s.syncLast || {};
     Object.keys(kinds).forEach(k => { s.syncLast[k] = stamp; });
@@ -2221,7 +2252,7 @@ async function doPull(){
   if (!syncReady()) return;
   const c = syncCfg();
   try {
-    const rows = await supa('cc_pull_state', { p_secret: c.secret }) || [];
+    const rows = await supa('cc_pull_state', { p_handle: c.handle, p_pass: c.pass }) || [];
     const s = getSettings();
     const last = s.syncLast || {};
     let changed = false;
@@ -2232,7 +2263,10 @@ async function doPull(){
       const newer = !last[r.kind] || r.updated_at > last[r.kind];
       if (!newer) return;
       if (store[r.kind]) {
-        localStorage.setItem(store[r.kind], JSON.stringify(r.data));
+        let data = r.data;
+        if (r.kind === 'log') data = mergeThumbsIntoLog(data);
+        if (r.kind === 'favs') data = mergeThumbsIntoFavs(data);
+        localStorage.setItem(store[r.kind], JSON.stringify(data));
         changed = true;
       } else if (r.kind === 'profile') {
         adoptProfile(r.data);
@@ -2311,6 +2345,105 @@ async function renderCompetition(){
   }
 }
 
+/* ================= welcome / user gate ================= */
+let authMode = 'new';
+function openAuth(){
+  $('#authPick').hidden = false;
+  $('#authForm').hidden = true;
+  $('#authNote').textContent = '';
+  $('#authSheet').classList.add('open');
+}
+function closeAuth(){ $('#authSheet').classList.remove('open'); }
+function showAuthForm(mode){
+  authMode = mode;
+  $('#authPick').hidden = true;
+  $('#authForm').hidden = false;
+  $('#authGo').textContent = mode === 'new' ? 'Create my user' : 'Sign in';
+  $('#authNote').textContent = mode === 'new'
+    ? 'Pick any name and passcode. Anything already logged on this phone becomes yours.'
+    : 'Your data will download onto this phone.';
+  setTimeout(() => $('#authName').focus(), 200);
+}
+$('#authNew').addEventListener('click', () => showAuthForm('new'));
+$('#authExist').addEventListener('click', () => showAuthForm('exist'));
+$('#authBack').addEventListener('click', openAuth);
+$('#authEye').addEventListener('click', () => {
+  const k = $('#authPass');
+  k.type = k.type === 'password' ? 'text' : 'password';
+});
+$('#authSkip').addEventListener('click', () => {
+  const s = getSettings();
+  s.skipAuth = true;
+  localStorage.setItem(SKEY, JSON.stringify(s));
+  closeAuth();
+});
+$('#authGo').addEventListener('click', async () => {
+  const name = $('#authName').value.trim().toLowerCase().replace(/\s+/g, '_');
+  const pass = $('#authPass').value;
+  if (!/^[a-z0-9_]{2,16}$/.test(name)) {
+    $('#authNote').textContent = 'Names are 2 to 16 letters, numbers or underscores.';
+    return;
+  }
+  if (pass.length < 4) {
+    $('#authNote').textContent = 'Passcode needs at least 4 characters.';
+    return;
+  }
+  const btn = $('#authGo');
+  btn.disabled = true;
+  $('#authNote').textContent = 'Talking to the server...';
+  try {
+    if (authMode === 'new') {
+      const res = await supa('cc_signup', { p_handle: name, p_pass: pass });
+      if (res === 'taken') {
+        $('#authNote').textContent = 'That name is taken. If it is yours, go back and choose Existing user.';
+        return;
+      }
+    } else {
+      const res = await supa('cc_login', { p_handle: name, p_pass: pass });
+      if (res === 'bad') {
+        $('#authNote').textContent = 'Name and passcode do not match.';
+        return;
+      }
+    }
+    const s = getSettings();
+    s.syncHandle = name;
+    s.syncPass = pass;
+    delete s.skipAuth;
+    if (authMode === 'exist') s.syncLast = {};
+    localStorage.setItem(SKEY, JSON.stringify(s));
+    closeAuth();
+    toast("G'day " + name);
+    if (authMode === 'exist') { await doPull(); }
+    doPush();
+    renderDay();
+  } catch(err) {
+    $('#authNote').textContent = 'Could not reach the server. ' + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+$('#authAction').addEventListener('click', async () => {
+  if (syncReady()) {
+    if (!confirm('Log out? This phone will finish syncing, then clear its local copy so another user can sign in.')) return;
+    closeSettings();
+    try { await doPush(); } catch(e) {}
+    localStorage.removeItem(LKEY);
+    localStorage.removeItem(EKEY);
+    localStorage.removeItem(WKEY);
+    localStorage.removeItem(FKEY);
+    const s = getSettings();
+    ['goal','pgoal','sex','age','heightCm','weightKg','activity','targetW','targetDate',
+     'syncHandle','syncPass','syncLast','skipAuth'].forEach(k => delete s[k]);
+    localStorage.setItem(SKEY, JSON.stringify(s));
+    renderFavRow();
+    renderDay();
+    openAuth();
+  } else {
+    closeSettings();
+    openAuth();
+  }
+});
+
 /* ================= settings ================= */
 function applyTheme(t){
   const theme = t === 'dark' ? 'dark' : 'light';
@@ -2320,11 +2453,8 @@ function applyTheme(t){
 function openSettings(needKey){
   const s = getSettings();
   $('#keyIn').value = s.key || '';
-  $('#handleIn').value = s.syncHandle || '';
-  $('#codeIn').value = s.syncSecret || '';
-  $('#syncUrlIn').value = s.syncUrl || SYNC_URL_DEFAULT;
-  $('#syncKeyIn').value = s.syncKey || SYNC_KEY_DEFAULT;
-  setSyncStat(syncReady() ? 'Sync is on as ' + s.syncHandle + '.' : 'Sync is off. Fill in a handle, URL and key, then Save.');
+  setSyncStat(syncReady() ? 'Signed in as ' + s.syncHandle + '.' : 'Not signed in.');
+  $('#authAction').textContent = syncReady() ? 'Log out / switch user' : 'Sign in';
   $('#themeIn').value = (s.theme === 'dark') ? 'dark' : 'light';
   const sel = $('#modelIn');
   sel.innerHTML = MODELS.map(m => '<option value="' + m[0] + '">' + m[1] + '</option>').join('');
@@ -2343,62 +2473,15 @@ $('#keyEye').addEventListener('click', () => {
   const k = $('#keyIn');
   k.type = k.type === 'password' ? 'text' : 'password';
 });
-$('#saveSet').addEventListener('click', async () => {
+$('#saveSet').addEventListener('click', () => {
   const s = getSettings();
   s.key = $('#keyIn').value.trim();
   s.model = $('#modelIn').value;
   s.theme = $('#themeIn').value === 'dark' ? 'dark' : 'light';
-
-  const handle = $('#handleIn').value.trim().toLowerCase();
-  const url = $('#syncUrlIn').value.trim().replace(/\/+$/, '');
-  const akey = $('#syncKeyIn').value.trim();
-  let code = $('#codeIn').value.trim();
-  if (url) s.syncUrl = url; else delete s.syncUrl;
-  if (akey) s.syncKey = akey; else delete s.syncKey;
-
-  if (handle && url && akey) {
-    if (!/^[a-z0-9_]{3,16}$/.test(handle)) {
-      toast('Handle: 3-16 letters, numbers, underscores');
-      return;
-    }
-    if (!code) code = (crypto.randomUUID ? crypto.randomUUID()
-      : Date.now() + '-' + Math.random().toString(16).slice(2));
-    s.syncSecret = code;
-    s.syncHandle = handle;
-    localStorage.setItem(SKEY, JSON.stringify(s));
-    try {
-      const res = await supa('cc_register', { p_handle: handle, p_secret: code });
-      if (res === 'taken') {
-        delete s.syncHandle;
-        localStorage.setItem(SKEY, JSON.stringify(s));
-        toast('That handle is taken. Pick another, or enter its sync code.');
-        setSyncStat('Handle taken.');
-        return;
-      }
-      toast('Sync is on');
-      applyTheme(s.theme);
-      closeSettings();
-      renderDay();
-      await doPull();
-      doPush();
-      return;
-    } catch(err) {
-      toast('Could not reach sync: check URL and key');
-      setSyncStat(err.message);
-      return;
-    }
-  } else {
-    delete s.syncHandle;
-    if (!code) delete s.syncSecret; else s.syncSecret = code;
-  }
   setSettings(s);
   applyTheme(s.theme);
   closeSettings();
   renderDay();
-});
-$('#codeEye').addEventListener('click', () => {
-  const k = $('#codeIn');
-  k.type = k.type === 'password' ? 'text' : 'password';
 });
 
 /* export + wipe */
@@ -2453,6 +2536,7 @@ $('#wipeBtn').addEventListener('click', () => {
   applyTheme('light');
   renderFavRow();
   renderDay();
+  openAuth();
 });
 
 /* close sheets when tapping the dimmed backdrop */
@@ -2467,6 +2551,7 @@ applyTheme(getSettings().theme);
 renderFavRow();
 renderDay();
 if (syncReady()) doPull();
+else if (!getSettings().skipAuth) openAuth();
 </script>
 </body>
 </html>
