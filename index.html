@@ -257,6 +257,10 @@ textarea{width:100%; resize:vertical;}
 .ghost:active{background:rgba(var(--ink),.06);}
 .ghost.small{margin-top:12px; width:100%;}
 .ghost.danger{color:var(--danger); border-color:rgba(199,57,31,.45);}
+.copy-last{width:100%; justify-content:space-between; margin:0 0 16px; text-align:left;}
+.copy-last .cl-name{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.copy-last .cl-kcal{font-family:var(--mono); font-size:13px; color:var(--ash); flex:none;}
+.m-sub .src{color:#FC4C02;}
 .row-btns{display:flex; gap:8px; margin-top:12px;}
 .row-btns .ghost{flex:1; padding:11px 6px;}
 .primary{background:var(--flame); color:#1C1207; border-radius:14px; padding:14px 22px;
@@ -461,6 +465,7 @@ select{-webkit-appearance:none; appearance:none;
     </div>
 
     <div id="stDescribe" hidden>
+      <button id="copyLastBtn" class="ghost copy-last" hidden></button>
       <div class="eyebrow">What did you eat?</div>
       <textarea id="descIn" rows="4" placeholder="Type it here. Exact quantities give the most accurate count, e.g. 2 fried eggs, 40 g rolled oats, 250 ml full cream milk, 1 tbsp olive oil"></textarea>
       <button id="descBtn" class="primary">Estimate</button>
@@ -750,6 +755,12 @@ select{-webkit-appearance:none; appearance:none;
     <div class="set-note" id="syncStat">Not signed in.</div>
     <button id="authAction" class="ghost" style="width:100%">Sign in</button>
 
+    <div class="eyebrow">Strava</div>
+    <div class="set-note" style="margin:0 0 12px">Link Strava and each new activity, with its calories, lands in your log by itself and adds to what you can eat that day.</div>
+    <div class="set-note" id="stravaStat">Not connected.</div>
+    <button id="stravaBtn" class="ghost" style="width:100%">Connect with Strava</button>
+    <button id="stravaNow" class="ghost small" hidden>Check Strava now</button>
+
     <div class="eyebrow">Your data</div>
     <div class="set-btns">
       <button id="expCsv" class="ghost">Export CSV</button>
@@ -811,11 +822,24 @@ function getEx(){ try { return JSON.parse(localStorage.getItem(EKEY)) || {}; } c
 function setEx(x){ localStorage.setItem(EKEY, JSON.stringify(x)); pushSoon(); }
 
 const MODELS = [
-  ['claude-sonnet-5',            'Claude Sonnet 5 (recommended)'],
-  ['claude-opus-5',              'Claude Opus 5 (max accuracy, dearer)'],
-  ['claude-fable-5',             'Claude Fable 5 (frontier)'],
-  ['claude-haiku-4-5-20251001',  'Claude Haiku 4.5 (cheapest)']
+  ['claude-sonnet-5-5', 'Claude Sonnet 5.5 (recommended)'],
+  ['claude-opus-5-5',   'Claude Opus 5.5 (max accuracy, dearer)'],
+  ['claude-fable-5-1',  'Claude Fable 5.1 (frontier, dearest)'],
+  ['claude-haiku-5-5',  'Claude Haiku 5.5 (cheapest, fastest)']
 ];
+/* Older saved choices move to their current equivalent. */
+const MODEL_UPGRADES = {
+  'claude-sonnet-5': 'claude-sonnet-5-5',
+  'claude-opus-5': 'claude-opus-5-5',
+  'claude-fable-5': 'claude-fable-5-1',
+  'claude-haiku-4-5': 'claude-haiku-5-5',
+  'claude-haiku-4-5-20251001': 'claude-haiku-5-5'
+};
+function currentModel(){
+  const m = getSettings().model || '';
+  if (MODELS.some(x => x[0] === m)) return m;
+  return MODEL_UPGRADES[m] || MODELS[0][0];
+}
 const ACTIVITY = { sed: 1.2, light: 1.375, mod: 1.55, high: 1.725, ath: 1.9 };
 
 /* Built-in API key, stored reversed + base64 so GitHub secret scanning
@@ -855,6 +879,39 @@ Rules:
 Respond with ONLY a single JSON object. No markdown, no code fences, no commentary. Exactly this shape:
 {"activities":[{"name":"...","minutes":0,"kcal":0,"time":""}]}`;
 
+const MEAL_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['items', 'confidence', 'assumptions', 'question'],
+  properties: {
+    items: { type: 'array', items: {
+      type: 'object', additionalProperties: false,
+      required: ['name', 'grams', 'kcal', 'protein_g', 'carbs_g', 'fat_g', 'note'],
+      properties: {
+        name: { type: 'string' }, grams: { type: 'number' }, kcal: { type: 'number' },
+        protein_g: { type: 'number' }, carbs_g: { type: 'number' }, fat_g: { type: 'number' },
+        note: { type: 'string' }
+      }
+    } },
+    confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+    assumptions: { type: 'array', items: { type: 'string' } },
+    question: { type: 'string' }
+  }
+};
+const EX_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['activities'],
+  properties: {
+    activities: { type: 'array', items: {
+      type: 'object', additionalProperties: false,
+      required: ['name', 'minutes', 'kcal', 'time'],
+      properties: {
+        name: { type: 'string' }, minutes: { type: 'number' },
+        kcal: { type: 'number' }, time: { type: 'string' }
+      }
+    } }
+  }
+};
+
 /* ================= image prep ================= */
 function loadImage(url){
   return new Promise((res, rej) => {
@@ -887,26 +944,34 @@ async function prepImage(file){
 
 /* ================= API ================= */
 let aborter = null;
-async function apiCall(system, content){
-  const s = getSettings();
-  aborter = new AbortController();
-  const body = {
-    model: s.model || MODELS[0][0],
-    max_tokens: 1500,
-    system: system,
-    messages: [{ role: 'user', content: content }]
+/* Server-side refusal fallback is supported on these models only. */
+const FALLBACK_MODELS = ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-fable-5-1'];
+function apiErrorMessage(status, data){
+  const msg = (data && data.error && data.error.message) || '';
+  if (status === 401) return 'The API key was rejected (it may have been revoked). Paste a new key in Settings.';
+  if (status === 403) return 'This API key is not allowed to do that. ' + msg;
+  if (status === 404) return 'That model is not available on this API key. Pick another model in Settings.';
+  if (status === 413) return 'The photos are too large to send. Try fewer photos.';
+  if (status === 429) return 'Rate limited by the API. Wait a moment and try again.';
+  if (status === 529 || status === 503) return 'The model is overloaded right now. Try again shortly.';
+  if (/credit balance/i.test(msg)) return 'The API account is out of credit. Top up in the Anthropic Console.';
+  return msg || ('Request failed (HTTP ' + status + ').');
+}
+async function postMessages(body){
+  const model = body.model;
+  const headers = {
+    'content-type': 'application/json',
+    'x-api-key': getKey(),
+    'anthropic-version': '2023-06-01',
+    'anthropic-dangerous-direct-browser-access': 'true'
   };
+  if (body.fallbacks) headers['anthropic-beta'] = 'server-side-fallback-2026-07-01';
   let res;
   try {
     res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       signal: aborter.signal,
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': getKey(),
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
+      headers: headers,
       body: JSON.stringify(body)
     });
   } catch(e) {
@@ -914,13 +979,38 @@ async function apiCall(system, content){
     throw new Error('Could not reach the API. Check your connection and try again.');
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    if (res.status === 401) throw new Error('The API key was rejected. Check Settings.');
-    if (res.status === 429) throw new Error('Rate limited by the API. Wait a moment and try again.');
-    if (res.status === 529 || res.status === 503) throw new Error('The model is overloaded right now. Try again shortly.');
-    throw new Error((data && data.error && data.error.message) || ('Request failed (HTTP ' + res.status + ').'));
-  }
-  return (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+  return { res: res, data: data, model: model };
+}
+async function apiCall(system, content, opts){
+  opts = opts || {};
+  const model = currentModel();
+  aborter = new AbortController();
+  const basic = {
+    model: model,
+    max_tokens: 16000,
+    system: system,
+    messages: [{ role: 'user', content: content }]
+  };
+  /* Full request: effort keeps replies quick, the JSON schema guarantees a
+     parseable reply, and fallbacks rescue the odd false-positive refusal. */
+  const full = Object.assign({}, basic, {
+    output_config: Object.assign(
+      { effort: opts.effort || 'medium' },
+      opts.schema ? { format: { type: 'json_schema', schema: opts.schema } } : {}
+    )
+  });
+  if (FALLBACK_MODELS.indexOf(model) !== -1) full.fallbacks = 'default';
+
+  let r = await postMessages(full);
+  /* If the API rejects one of the optional extras, retry once with the plain request. */
+  if (r.res.status === 400) r = await postMessages(basic);
+  if (!r.res.ok) throw new Error(apiErrorMessage(r.res.status, r.data));
+
+  const stop = r.data.stop_reason;
+  if (stop === 'refusal') throw new Error('The model declined this one. Try rewording it, or pick another model in Settings.');
+  const text = (r.data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+  if (stop === 'max_tokens' && !text.trim()) throw new Error('The model ran out of room before answering. Try again, or try a simpler description.');
+  return text;
 }
 function sliceJSON(text){
   const t = String(text || '').replace(/```json|```/g, '').trim();
@@ -934,7 +1024,7 @@ async function callClaude(userText){
     type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: im.b64 }
   }));
   content.push({ type: 'text', text: userText });
-  const j = sliceJSON(await apiCall(SYS, content));
+  const j = sliceJSON(await apiCall(SYS, content, { effort: 'medium', schema: MEAL_SCHEMA }));
   const items = (Array.isArray(j.items) ? j.items : []).map(it => {
     const grams = Math.max(1, r0(it.grams));
     const kcal = r0(it.kcal), p = r1(it.protein_g), c = r1(it.carbs_g), f = r1(it.fat_g);
@@ -957,7 +1047,7 @@ async function callClaudeExercise(text){
   const wNow = currentWeightKg();
   const msg = (wNow ? 'Bodyweight: ' + r1(wNow) + ' kg.\n' : '') +
     'Input:\n"""\n' + text + '\n"""';
-  const j = sliceJSON(await apiCall(EXSYS, [{ type: 'text', text: msg }]));
+  const j = sliceJSON(await apiCall(EXSYS, [{ type: 'text', text: msg }], { effort: 'low', schema: EX_SCHEMA }));
   const acts = (Array.isArray(j.activities) ? j.activities : []).map(a => ({
     id: uid(),
     name: String(a.name || 'Exercise'),
@@ -1225,7 +1315,8 @@ function renderDay(){
       return '<div class="meal" role="button" tabindex="0" data-ex="' + x.id + '">' +
         '<div class="m-thumb blank"><svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>' +
         '<div class="m-body"><div class="m-name">' + esc(x.name) + '</div>' +
-        '<div class="m-sub">' + esc(x.time || '') + (x.time ? ' &middot; ' : '') + r0(x.mins) + ' min</div></div>' +
+        '<div class="m-sub">' + esc(x.time || '') + (x.time ? ' &middot; ' : '') + r0(x.mins) + ' min' +
+        (x.src === 'strava' ? ' &middot; <span class="src">Strava</span>' : '') + '</div></div>' +
         '<div class="m-kcal burn">&#8722;' + nf.format(r0(x.kcal)) + '</div></div>';
     }
     const m = r.m;
@@ -1497,6 +1588,57 @@ function applyEstimate(est){
   session.confidence = est.confidence;
   session.question = est.question;
 }
+function sessionItemsFrom(items){
+  return items.map(i => {
+    const grams = Math.max(1, Number(i.grams) || 1);
+    return {
+      id: uid(), name: i.name, grams: grams,
+      kcal: Number(i.kcal) || 0, p: Number(i.p) || 0, c: Number(i.c) || 0, f: Number(i.f) || 0,
+      note: i.note || '',
+      basis: { kcal: (Number(i.kcal) || 0) / grams, p: (Number(i.p) || 0) / grams,
+               c: (Number(i.c) || 0) / grams, f: (Number(i.f) || 0) / grams }
+    };
+  });
+}
+/* The most recently logged meal, by date then time. */
+function lastMeal(){
+  const log = getLog();
+  const days = Object.keys(log).sort().reverse();
+  for (const d of days) {
+    const meals = (log[d] || []).filter(m => m.items && m.items.length);
+    if (!meals.length) continue;
+    return meals.slice().sort((a, b) => (a.time < b.time ? 1 : -1))[0];
+  }
+  return null;
+}
+function renderCopyLast(){
+  const btn = $('#copyLastBtn');
+  const m = lastMeal();
+  if (!m) { btn.hidden = true; return; }
+  btn.hidden = false;
+  btn.innerHTML = '<span class="cl-name">Copy last meal: ' + esc(m.name) + '</span>' +
+    '<span class="cl-kcal">' + nf.format(r0(sumItems(m.items).kcal)) + ' kcal</span>';
+}
+$('#copyLastBtn').addEventListener('click', () => {
+  if (!session) return;
+  const m = lastMeal();
+  if (!m) return;
+  session.name = m.name;
+  session.thumb = m.thumb || '';
+  session.previewURL = '';
+  session.favId = m.favId || '';
+  session.confidence = m.confidence || '';
+  session.assumptions = (m.assumptions || []).slice();
+  session.question = '';
+  session.desc = 'A repeat of a previously logged meal called "' + m.name + '".';
+  session.items = sessionItemsFrom(m.items);
+  $('#mName').value = session.name;
+  $('#shImg').src = session.thumb || BLANK_IMG;
+  $('#favBtn').classList.toggle('on',
+    !!(session.favId && getFavs().some(f => f.id === session.favId)));
+  setSheetState('result');
+  renderItems();
+});
 
 /* ================= add-meal flow (describe first) ================= */
 function startAddMeal(){
@@ -1504,6 +1646,7 @@ function startAddMeal(){
   session = freshSession();
   openSheet();
   setSheetState('describe');
+  renderCopyLast();
   $('#descIn').value = '';
   setTimeout(() => $('#descIn').focus(), 250);
 }
@@ -1656,16 +1799,7 @@ function openEdit(dateKey, id){
     favId: meal.favId || '',
     confidence: meal.confidence || '', question: '',
     assumptions: meal.assumptions || [],
-    items: meal.items.map(i => {
-      const grams = Math.max(1, Number(i.grams) || 1);
-      return {
-        id: uid(), name: i.name, grams: grams,
-        kcal: Number(i.kcal) || 0, p: Number(i.p) || 0, c: Number(i.c) || 0, f: Number(i.f) || 0,
-        note: i.note || '',
-        basis: { kcal: (Number(i.kcal) || 0) / grams, p: (Number(i.p) || 0) / grams,
-                 c: (Number(i.c) || 0) / grams, f: (Number(i.f) || 0) / grams }
-      };
-    })
+    items: sessionItemsFrom(meal.items)
   };
   openSheet();
   setSheetState('result');
@@ -1795,7 +1929,8 @@ $('#exSave').addEventListener('click', () => {
   const rows = exSession.rows
     .map(x => ({
       id: x.id, name: (x.name || '').trim() || 'Exercise',
-      mins: r0(x.mins), kcal: r0(x.kcal), time: x.time || nowHM()
+      mins: r0(x.mins), kcal: r0(x.kcal), time: x.time || nowHM(),
+      sid: x.sid || ''
     }))
     .filter(x => x.kcal > 0 || x.mins > 0);
   if (!rows.length) { showExError('Add at least one activity with minutes or calories.'); return; }
@@ -1806,8 +1941,9 @@ $('#exSave').addEventListener('click', () => {
     if (!exlog[exSession.origDate].length) delete exlog[exSession.origDate];
   }
   (exlog[dk] = exlog[dk] || []).push.apply(exlog[dk],
-    rows.map((x, i) => ({ id: (exSession.mode === 'edit' && i === 0) ? exSession.id : uid(),
-      name: x.name, mins: x.mins, kcal: x.kcal, time: x.time })));
+    rows.map((x, i) => Object.assign({ id: (exSession.mode === 'edit' && i === 0) ? exSession.id : uid(),
+      name: x.name, mins: x.mins, kcal: x.kcal, time: x.time },
+      x.sid ? { src: 'strava', sid: x.sid } : {})));
   setEx(exlog);
   viewDate = dk;
   closeExercise();
@@ -1817,7 +1953,7 @@ function openExEdit(dateKey, id){
   const x = (getEx()[dateKey] || []).find(e => e.id === id);
   if (!x) return;
   exSession = { mode: 'edit', id: x.id, date: dateKey, origDate: dateKey,
-    rows: [{ id: uid(), name: x.name, mins: x.mins, kcal: x.kcal, time: x.time || '' }] };
+    rows: [{ id: uid(), name: x.name, mins: x.mins, kcal: x.kcal, time: x.time || '', sid: x.sid || '' }] };
   $('#exDate').value = dateKey;
   $('#exDate').max = todayISO();
   $('#exDel').hidden = false;
@@ -1830,6 +1966,8 @@ $('#exDel').addEventListener('click', () => {
   if (!exSession || exSession.mode !== 'edit') return;
   if (!confirm('Delete this exercise entry?')) return;
   const exlog = getEx();
+  const gone = (exlog[exSession.origDate] || []).find(x => x.id === exSession.id);
+  if (gone && gone.sid) stravaSkip(gone.sid);
   if (exlog[exSession.origDate]) {
     exlog[exSession.origDate] = exlog[exSession.origDate].filter(x => x.id !== exSession.id);
     if (!exlog[exSession.origDate].length) delete exlog[exSession.origDate];
@@ -2345,6 +2483,185 @@ async function renderCompetition(){
   }
 }
 
+/* ================= Strava ================= */
+const STRAVA_SKIP = 'ml.stravaSkip';
+const STRAVA_EVERY = 10 * 60 * 1000;
+/* Rough MET values for when Strava has no calorie figure. */
+const MET = {
+  Run: 9.8, TrailRun: 9.5, VirtualRun: 9.8, Ride: 7.5, VirtualRide: 7, MountainBikeRide: 8.5,
+  GravelRide: 8, EBikeRide: 4, Walk: 3.8, Hike: 6, Swim: 8, WeightTraining: 5, Workout: 5,
+  Crossfit: 8, HighIntensityIntervalTraining: 8, Yoga: 2.5, Pilates: 3, Rowing: 7, Surfing: 3.5,
+  Kayaking: 5, StandUpPaddling: 6, Elliptical: 5, StairStepper: 8, RockClimbing: 7.5,
+  Tennis: 7, Soccer: 7, Golf: 4.5
+};
+async function stravaFn(action, body){
+  const c = syncCfg();
+  let res;
+  try {
+    res = await fetch(c.url + '/functions/v1/strava', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'apikey': c.key, 'authorization': 'Bearer ' + c.key },
+      body: JSON.stringify(Object.assign({ action: action }, body || {}))
+    });
+  } catch(e) {
+    throw new Error('Could not reach the Strava link. Check your connection.');
+  }
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok || (d.error && d.connected !== false)) throw new Error(d.error || ('Strava link failed (' + res.status + ')'));
+  return d;
+}
+function stravaAuth(){ const c = syncCfg(); return { handle: c.handle, pass: c.pass }; }
+function getStravaSkip(){ try { return JSON.parse(localStorage.getItem(STRAVA_SKIP)) || []; } catch(e){ return []; } }
+function stravaSkip(sid){
+  const a = getStravaSkip();
+  if (a.indexOf(sid) === -1) { a.push(sid); localStorage.setItem(STRAVA_SKIP, JSON.stringify(a.slice(-300))); }
+  if (syncReady()) stravaFn('skip', Object.assign(stravaAuth(), { sid: sid })).catch(() => {});
+}
+function stravaKcal(a){
+  if (Number(a.calories) > 0) return r0(a.calories);
+  /* Ride power data: kJ of work is very close to kcal burned. */
+  if (Number(a.kilojoules) > 0) return r0(a.kilojoules);
+  const kg = currentWeightKg() || 75;
+  return r0((MET[a.sport_type] || 6) * kg * (Number(a.moving_time) || 0) / 3600);
+}
+function localISO(d){ return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function setStravaStat(msg){ const el = $('#stravaStat'); if (el) el.textContent = msg; }
+function updateStravaUI(){
+  const s = getSettings();
+  const btn = $('#stravaBtn');
+  if (!syncReady()) {
+    setStravaStat('Sign in above first, so Strava has an account to sync into.');
+    btn.textContent = 'Connect with Strava';
+    btn.disabled = true;
+    $('#stravaNow').hidden = true;
+    return;
+  }
+  btn.disabled = false;
+  if (s.strava) {
+    setStravaStat('Connected' + (s.strava.athlete ? ' as ' + s.strava.athlete : '') +
+      '. New activities come in each time you open the app.' +
+      (s.stravaChecked ? ' Last checked ' + new Date(s.stravaChecked).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }) + '.' : ''));
+    btn.textContent = 'Disconnect Strava';
+    $('#stravaNow').hidden = false;
+  } else {
+    setStravaStat('Not connected.');
+    btn.textContent = 'Connect with Strava';
+    $('#stravaNow').hidden = true;
+  }
+}
+async function stravaConnect(){
+  if (!syncReady()) { toast('Sign in first'); return; }
+  setStravaStat('Opening Strava...');
+  try {
+    const r = await stravaFn('begin', stravaAuth());
+    const back = location.origin + location.pathname;
+    location.href = 'https://www.strava.com/oauth/authorize' +
+      '?client_id=' + encodeURIComponent(r.client_id) +
+      '&redirect_uri=' + encodeURIComponent(back) +
+      '&response_type=code&approval_prompt=auto&scope=' + encodeURIComponent('read,activity:read_all') +
+      '&state=' + encodeURIComponent(r.state);
+  } catch(err) {
+    setStravaStat(err.message);
+  }
+}
+/* Runs on boot. Strava sends us back here with ?code=...&state=... */
+async function stravaHandleRedirect(){
+  const q = new URLSearchParams(location.search);
+  if (!q.has('state') || !(q.has('code') || q.has('error'))) return;
+  history.replaceState(null, '', location.pathname);
+  if (q.get('error')) { toast('Strava connection cancelled'); return; }
+  if ((q.get('scope') || '').indexOf('activity:read') === -1) {
+    toast('Strava needs permission to view your activities. Connect again and leave that box ticked.');
+    return;
+  }
+  try {
+    const r = await stravaFn('connect', { code: q.get('code'), state: q.get('state') });
+    const s = getSettings();
+    s.strava = { athlete: r.athlete || '' };
+    delete s.stravaChecked;
+    localStorage.setItem(SKEY, JSON.stringify(s));
+    toast(syncReady() ? 'Strava connected' : 'Strava connected. Head back to the Meal Sync app.');
+  } catch(err) {
+    toast('Strava: ' + err.message);
+  }
+}
+let stravaBusy = false;
+async function stravaSync(force){
+  if (!syncReady() || stravaBusy) return;
+  const st = getSettings();
+  if (!force && st.stravaChecked && Date.now() - st.stravaChecked < STRAVA_EVERY) return;
+  stravaBusy = true;
+  if (force) setStravaStat('Checking Strava...');
+  try {
+    const known = [];
+    const exNow = getEx();
+    Object.keys(exNow).forEach(d => exNow[d].forEach(x => { if (x.sid) known.push(x.sid); }));
+    const skip = getStravaSkip();
+    const after = Math.floor(Date.now() / 1000) - 7 * 86400;
+    const r = await stravaFn('activities', Object.assign(stravaAuth(), {
+      after: after, known: known.concat(skip).slice(-400)
+    }));
+    const s = getSettings();
+    s.stravaChecked = Date.now();
+    s.strava = r.connected ? { athlete: r.athlete || '' } : null;
+    if (!s.strava) delete s.strava;
+    localStorage.setItem(SKEY, JSON.stringify(s));
+    if (r.error) toast(r.error);
+    if (!r.connected) return;
+
+    /* Only bring in activities from the day you connected onwards, so
+       anything you already logged by hand is not doubled up. */
+    const fromDay = r.since ? localISO(new Date(r.since * 1000)) : '';
+    const have = new Set(known.concat(skip));
+    const fresh = (r.activities || []).filter(a => {
+      const day = String(a.start_date_local || '').slice(0, 10);
+      return /^\d{4}-\d\d-\d\d$/.test(day) && day >= fromDay && day <= todayISO() && !have.has(a.id);
+    });
+    if (!fresh.length) return;
+    const exlog = getEx();
+    let kcal = 0;
+    fresh.forEach(a => {
+      const day = a.start_date_local.slice(0, 10);
+      const entry = {
+        id: uid(), name: a.name || a.sport_type || 'Activity',
+        mins: r0((Number(a.moving_time) || 0) / 60), kcal: stravaKcal(a),
+        time: /^\d\d:\d\d$/.test(a.start_date_local.slice(11, 16)) ? a.start_date_local.slice(11, 16) : '',
+        src: 'strava', sid: a.id
+      };
+      kcal += entry.kcal;
+      (exlog[day] = exlog[day] || []).push(entry);
+    });
+    setEx(exlog);
+    renderDay();
+    toast('Strava: ' + fresh.length + (fresh.length === 1 ? ' activity' : ' activities') +
+      ', ' + nf.format(r0(kcal)) + ' kcal');
+  } catch(err) {
+    if (force) toast('Strava: ' + err.message);
+  } finally {
+    stravaBusy = false;
+    updateStravaUI();
+  }
+}
+$('#stravaBtn').addEventListener('click', async () => {
+  if (!getSettings().strava) { stravaConnect(); return; }
+  if (!confirm('Disconnect Strava? Activities already in your log stay there.')) return;
+  try {
+    await stravaFn('disconnect', stravaAuth());
+    const s = getSettings();
+    delete s.strava;
+    delete s.stravaChecked;
+    localStorage.setItem(SKEY, JSON.stringify(s));
+    toast('Strava disconnected');
+  } catch(err) {
+    toast('Strava: ' + err.message);
+  }
+  updateStravaUI();
+});
+$('#stravaNow').addEventListener('click', () => stravaSync(true));
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') stravaSync(false);
+});
+
 /* ================= welcome / user gate ================= */
 let authMode = 'new';
 function openAuth(){
@@ -2416,6 +2733,7 @@ $('#authGo').addEventListener('click', async () => {
     if (authMode === 'exist') { await doPull(); }
     doPush();
     renderDay();
+    stravaSync(true);
   } catch(err) {
     $('#authNote').textContent = 'Could not reach the server. ' + err.message;
   } finally {
@@ -2433,7 +2751,8 @@ $('#authAction').addEventListener('click', async () => {
     localStorage.removeItem(FKEY);
     const s = getSettings();
     ['goal','pgoal','sex','age','heightCm','weightKg','activity','targetW','targetDate',
-     'syncHandle','syncPass','syncLast','skipAuth'].forEach(k => delete s[k]);
+     'syncHandle','syncPass','syncLast','skipAuth','strava','stravaChecked'].forEach(k => delete s[k]);
+    localStorage.removeItem(STRAVA_SKIP);
     localStorage.setItem(SKEY, JSON.stringify(s));
     renderFavRow();
     renderDay();
@@ -2455,10 +2774,11 @@ function openSettings(needKey){
   $('#keyIn').value = s.key || '';
   setSyncStat(syncReady() ? 'Signed in as ' + s.syncHandle + '.' : 'Not signed in.');
   $('#authAction').textContent = syncReady() ? 'Log out / switch user' : 'Sign in';
+  updateStravaUI();
   $('#themeIn').value = (s.theme === 'dark') ? 'dark' : 'light';
   const sel = $('#modelIn');
   sel.innerHTML = MODELS.map(m => '<option value="' + m[0] + '">' + m[1] + '</option>').join('');
-  sel.value = s.model || MODELS[0][0];
+  sel.value = currentModel();
   $('#keyHint').style.color = needKey ? 'var(--flame)' : '';
   $('#keyHint').textContent = needKey
     ? 'No API key is available. Paste one here to continue.'
@@ -2532,6 +2852,7 @@ $('#wipeBtn').addEventListener('click', () => {
   localStorage.removeItem(WKEY);
   localStorage.removeItem(FKEY);
   localStorage.removeItem(EKEY);
+  localStorage.removeItem(STRAVA_SKIP);
   closeSettings();
   applyTheme('light');
   renderFavRow();
@@ -2550,8 +2871,10 @@ $('#setSheet').addEventListener('click', e => { if (e.target === e.currentTarget
 applyTheme(getSettings().theme);
 renderFavRow();
 renderDay();
-if (syncReady()) doPull();
-else if (!getSettings().skipAuth) openAuth();
+stravaHandleRedirect().then(() => {
+  if (syncReady()) doPull().then(() => stravaSync(false));
+  else if (!getSettings().skipAuth) openAuth();
+});
 </script>
 </body>
 </html>
