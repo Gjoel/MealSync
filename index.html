@@ -258,7 +258,21 @@ textarea{width:100%; resize:vertical;}
 .ghost:active{background:rgba(var(--ink),.06);}
 .ghost.small{margin-top:12px; width:100%;}
 .ghost.danger{color:var(--danger); border-color:rgba(199,57,31,.45);}
+[hidden]{display:none !important;}
 .copy-last{width:100%; justify-content:space-between; margin:0 0 16px; text-align:left;}
+.food-wrap{margin-top:12px;}
+.food-wrap select{width:100%;}
+.food-qty{display:flex; gap:8px; margin-top:8px; align-items:center;}
+.food-qty input{width:72px; flex:none; font-family:var(--mono); text-align:center;}
+.food-qty select{flex:1; min-width:0;}
+.food-qty .primary{padding:12px 18px; flex:none;}
+.food-actions{display:flex; gap:8px; margin-top:8px;}
+.food-actions .ghost{flex:1; padding:11px 6px;}
+.lbl-form{margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:14px;}
+.lbl-form .eyebrow{margin-top:0;}
+.lbl-form > input{width:100%;}
+.lbl-form .num.w input{width:84px;}
+.lbl-form .primary{width:100%; margin-top:12px;}
 .copy-last .cl-name{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .copy-last .cl-kcal{font-family:var(--mono); font-size:13px; color:var(--ash); flex:none;}
 .m-sub .src{color:#FC4C02;}
@@ -432,6 +446,7 @@ select{-webkit-appearance:none; appearance:none;
 <input type="file" id="camIn" accept="image/*" capture="environment" hidden>
 <input type="file" id="libIn" accept="image/*" hidden>
 <input type="file" id="morIn" accept="image/*" hidden>
+<input type="file" id="lblIn" accept="image/*" capture="environment" hidden>
 
 <div id="toast" class="toast" role="status"></div>
 
@@ -467,6 +482,10 @@ select{-webkit-appearance:none; appearance:none;
 
     <div id="stDescribe" hidden>
       <button id="copyLastBtn" class="ghost copy-last" hidden></button>
+      <div class="photo-btns" style="margin:0 0 16px">
+        <button id="myFoodsBtn" class="ghost">My foods</button>
+        <button id="scanLblBtn" class="ghost">Scan a label</button>
+      </div>
       <div class="eyebrow">What did you eat?</div>
       <textarea id="descIn" rows="4" placeholder="Type it here. Exact quantities give the most accurate count, e.g. 2 fried eggs, 40 g rolled oats, 250 ml full cream milk, 1 tbsp olive oil"></textarea>
       <button id="descBtn" class="primary">Estimate</button>
@@ -493,7 +512,39 @@ select{-webkit-appearance:none; appearance:none;
       <div class="row-btns">
         <button id="addItem" class="ghost">+ Item</button>
         <button id="addPhotoBtn" class="ghost">+ Photo</button>
+        <button id="foodToggle" class="ghost">My foods</button>
         <button id="prodToggle" class="ghost">Search</button>
+      </div>
+
+      <div id="foodWrap" class="food-wrap" hidden>
+        <select id="foodSel" aria-label="My foods"></select>
+        <div id="foodQty" class="food-qty" hidden>
+          <input id="foodN" type="number" step="any" inputmode="decimal" min="0" value="1" aria-label="Amount">
+          <select id="foodUnit" aria-label="Unit"></select>
+          <button id="foodAdd" class="primary">Add</button>
+        </div>
+        <div id="foodInfo" class="prod-note" hidden></div>
+        <div class="food-actions">
+          <button id="foodScan" class="ghost">Scan a label</button>
+          <button id="foodEdit" class="ghost" hidden>Edit</button>
+          <button id="foodDel" class="ghost danger" hidden>Remove</button>
+        </div>
+        <div id="lblForm" class="lbl-form" hidden>
+          <div class="eyebrow">Check it matches the label</div>
+          <input id="lblName" placeholder="Name, e.g. Hash brown (Your Spud Co)">
+          <div class="item-nums">
+            <div class="num t"><label>1 serve is</label><input id="lblUnit" placeholder="piece"></div>
+            <div class="num g"><label>serve g</label><input id="lblG" type="number" step="any" inputmode="decimal"></div>
+          </div>
+          <div class="prod-note" style="padding:8px 2px 0">Per 100 g</div>
+          <div class="item-nums" style="margin-top:4px">
+            <div class="num k"><label>kcal</label><input id="lblK" type="number" step="any" inputmode="decimal"></div>
+            <div class="num m"><label>P g</label><input id="lblP" type="number" step="any" inputmode="decimal"></div>
+            <div class="num m"><label>C g</label><input id="lblC" type="number" step="any" inputmode="decimal"></div>
+            <div class="num m"><label>F g</label><input id="lblF" type="number" step="any" inputmode="decimal"></div>
+          </div>
+          <button id="lblSave" class="primary">Save to my foods</button>
+        </div>
       </div>
 
       <div id="prodWrap" hidden>
@@ -821,6 +872,9 @@ function getFavs(){ try { return JSON.parse(localStorage.getItem(FKEY)) || []; }
 function setFavs(f){ localStorage.setItem(FKEY, JSON.stringify(f)); pushSoon(); }
 function getEx(){ try { return JSON.parse(localStorage.getItem(EKEY)) || {}; } catch(e){ return {}; } }
 function setEx(x){ localStorage.setItem(EKEY, JSON.stringify(x)); pushSoon(); }
+const DKEY = 'ml.foods';
+function getFoods(){ try { return JSON.parse(localStorage.getItem(DKEY)) || []; } catch(e){ return []; } }
+function setFoods(f){ localStorage.setItem(DKEY, JSON.stringify(f)); pushSoon(); }
 
 const MODELS = [
   ['claude-sonnet-5-5', 'Claude Sonnet 5.5 (recommended)'],
@@ -880,6 +934,27 @@ Rules:
 Respond with ONLY a single JSON object. No markdown, no code fences, no commentary. Exactly this shape:
 {"activities":[{"name":"...","minutes":0,"kcal":0,"time":""}]}`;
 
+const LBLSYS = `You read the nutrition information panel on food packaging from a photo.
+
+Rules:
+1. Use the "per 100 g" (or per 100 mL) column. If only per-serving values are shown, scale them to 100 g using the stated serving size.
+2. Energy in kcal. If only kJ is shown, kcal = kJ / 4.184.
+3. serving_g is the stated serving size in grams (treat mL as grams), or 0 if none is shown.
+4. serving_label is what one serving is in plain words, e.g. "piece", "slice", "cup", "bar". If the serving is just a weight, use "serve".
+5. name is a short product name with the brand in brackets if visible, e.g. "Hash brown (Your Spud Co)".
+6. If no nutrition panel is readable, set found to false and use 0 or empty strings for the rest.
+
+Respond with ONLY a single JSON object in the requested shape.`;
+const LABEL_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['found', 'name', 'serving_g', 'serving_label', 'kcal_100g', 'protein_100g', 'carbs_100g', 'fat_100g'],
+  properties: {
+    found: { type: 'boolean' }, name: { type: 'string' },
+    serving_g: { type: 'number' }, serving_label: { type: 'string' },
+    kcal_100g: { type: 'number' }, protein_100g: { type: 'number' },
+    carbs_100g: { type: 'number' }, fat_100g: { type: 'number' }
+  }
+};
 const MEAL_SCHEMA = {
   type: 'object', additionalProperties: false,
   required: ['items', 'confidence', 'assumptions', 'question'],
@@ -1404,6 +1479,8 @@ function openSheet(){
   $('#saveMeal').textContent = isEdit ? 'Save changes' : 'Log meal';
   $('#prodWrap').hidden = true;
   $('#prodList').innerHTML = '';
+  $('#foodWrap').hidden = true;
+  $('#lblForm').hidden = true;
   updateAddPhotoLabel();
 }
 function closeSheet(){
@@ -1493,6 +1570,175 @@ $('#addItem').addEventListener('click', () => {
   const last = rows[rows.length - 1];
   if (last) $('.i-name', last).focus();
 });
+
+/* ================= my foods (from nutrition labels) ================= */
+let foodEditId = '';
+function foodLabel(f){
+  const g = Number(f.serving_g) || 0;
+  const kc = g ? r0(f.per100.kcal * g / 100) + ' kcal/' + (f.serving_label || 'serve')
+               : r0(f.per100.kcal) + ' kcal/100 g';
+  return f.name + ' · ' + kc;
+}
+function selectedFood(){ return getFoods().find(f => f.id === $('#foodSel').value) || null; }
+function renderFoodSel(pickId){
+  const foods = getFoods().slice().sort((a, b) =>
+    ((b.lastUsed || 0) - (a.lastUsed || 0)) || a.name.localeCompare(b.name));
+  $('#foodSel').innerHTML = '<option value="">' +
+    (foods.length ? 'Pick one of my foods&hellip;' : 'No saved foods yet. Scan a label to add one.') + '</option>' +
+    foods.map(f => '<option value="' + f.id + '">' + esc(foodLabel(f)) + '</option>').join('');
+  $('#foodSel').value = pickId || '';
+  onFoodPick();
+}
+function onFoodPick(){
+  const f = selectedFood();
+  $('#foodQty').hidden = !f;
+  $('#foodEdit').hidden = !f;
+  $('#foodDel').hidden = !f;
+  if (!f) { $('#foodInfo').hidden = true; return; }
+  const g = Number(f.serving_g) || 0;
+  $('#foodUnit').innerHTML = (g ? '<option value="serve">' + esc(f.serving_label || 'serve') + ' (' + r1(g) + ' g)</option>' : '') +
+    '<option value="g">grams</option>';
+  $('#foodUnit').value = g ? 'serve' : 'g';
+  $('#foodN').value = g ? 1 : 100;
+  updateFoodInfo();
+}
+function foodGrams(){
+  const f = selectedFood();
+  const n = Math.max(0, parseFloat($('#foodN').value) || 0);
+  if (!f) return 0;
+  return $('#foodUnit').value === 'serve' ? n * (Number(f.serving_g) || 0) : n;
+}
+function updateFoodInfo(){
+  const f = selectedFood();
+  if (!f) return;
+  const g = foodGrams(), k = g / 100;
+  $('#foodInfo').hidden = false;
+  $('#foodInfo').innerHTML = r1(g) + ' g &middot; <b>' + nf.format(r0(f.per100.kcal * k)) + ' kcal</b> &middot; P ' +
+    r0(f.per100.p * k) + ' &middot; C ' + r0(f.per100.c * k) + ' &middot; F ' + r0(f.per100.f * k);
+}
+function openFoods(){
+  $('#foodWrap').hidden = false;
+  $('#lblForm').hidden = true;
+  renderFoodSel('');
+}
+$('#foodToggle').addEventListener('click', () => {
+  if ($('#foodWrap').hidden) openFoods(); else $('#foodWrap').hidden = true;
+});
+$('#foodSel').addEventListener('change', () => { $('#lblForm').hidden = true; onFoodPick(); });
+$('#foodN').addEventListener('input', updateFoodInfo);
+$('#foodUnit').addEventListener('change', () => {
+  const f = selectedFood();
+  if (!f) return;
+  $('#foodN').value = $('#foodUnit').value === 'serve' ? 1 : r1(Number(f.serving_g) || 100);
+  updateFoodInfo();
+});
+$('#foodAdd').addEventListener('click', () => {
+  const f = selectedFood();
+  if (!f || !session) return;
+  const g = foodGrams();
+  if (!(g > 0)) { $('#foodN').focus(); return; }
+  const n = parseFloat($('#foodN').value) || 0;
+  const k = g / 100;
+  session.items.push({
+    id: uid(), name: f.name, grams: r1(g),
+    kcal: r0(f.per100.kcal * k), p: r1(f.per100.p * k), c: r1(f.per100.c * k), f: r1(f.per100.f * k),
+    note: $('#foodUnit').value === 'serve' ? n + ' × ' + (f.serving_label || 'serve') + ', from the label' : 'From the label',
+    basis: { kcal: f.per100.kcal / 100, p: f.per100.p / 100, c: f.per100.c / 100, f: f.per100.f / 100 }
+  });
+  const foods = getFoods();
+  const ff = foods.find(x => x.id === f.id);
+  if (ff) { ff.lastUsed = Date.now(); setFoods(foods); }
+  renderItems();
+  renderFoodSel('');
+  toast('Added ' + f.name);
+});
+$('#foodDel').addEventListener('click', () => {
+  const f = selectedFood();
+  if (!f || !confirm('Remove ' + f.name + ' from my foods?')) return;
+  setFoods(getFoods().filter(x => x.id !== f.id));
+  renderFoodSel('');
+});
+function fillLabelForm(v){
+  $('#lblName').value = v.name || '';
+  $('#lblUnit').value = v.serving_label || 'serve';
+  $('#lblG').value = v.serving_g > 0 ? r1(v.serving_g) : '';
+  $('#lblK').value = r0(v.kcal);
+  $('#lblP').value = r1(v.p);
+  $('#lblC').value = r1(v.c);
+  $('#lblF').value = r1(v.f);
+  $('#lblForm').hidden = false;
+}
+$('#foodEdit').addEventListener('click', () => {
+  const f = selectedFood();
+  if (!f) return;
+  foodEditId = f.id;
+  fillLabelForm({ name: f.name, serving_label: f.serving_label, serving_g: f.serving_g,
+    kcal: f.per100.kcal, p: f.per100.p, c: f.per100.c, f: f.per100.f });
+});
+$('#lblSave').addEventListener('click', () => {
+  const name = $('#lblName').value.trim();
+  const kcal = parseFloat($('#lblK').value);
+  if (!name) { $('#lblName').focus(); return; }
+  if (!(kcal >= 0) || $('#lblK').value === '') { $('#lblK').focus(); return; }
+  const food = {
+    id: foodEditId || uid(), name: name,
+    serving_g: Math.max(0, parseFloat($('#lblG').value) || 0),
+    serving_label: $('#lblUnit').value.trim() || 'serve',
+    per100: { kcal: r0(kcal), p: r1($('#lblP').value), c: r1($('#lblC').value), f: r1($('#lblF').value) },
+    lastUsed: Date.now()
+  };
+  const foods = getFoods();
+  /* An existing food with the same name is updated rather than duplicated. */
+  const i = foods.findIndex(x => x.id === food.id || x.name.toLowerCase() === name.toLowerCase());
+  if (i >= 0) { food.id = foods[i].id; foods[i] = food; } else foods.push(food);
+  setFoods(foods);
+  foodEditId = '';
+  $('#lblForm').hidden = true;
+  renderFoodSel(food.id);
+  toast('Saved to my foods');
+});
+$('#foodScan').addEventListener('click', () => $('#lblIn').click());
+$('#lblIn').addEventListener('change', e => { scanLabel(e.target.files[0]); e.target.value = ''; });
+async function scanLabel(file){
+  if (!session || !file) return;
+  setSheetState('busy', 'Reading the label');
+  const backToFoods = () => {
+    setSheetState('result');
+    renderItems();
+    openFoods();
+  };
+  try {
+    const url = URL.createObjectURL(file);
+    let b64;
+    try { b64 = drawToJpeg(await loadImage(url), 1600, 0.85); }
+    finally { URL.revokeObjectURL(url); }
+    const j = sliceJSON(await apiCall(LBLSYS, [
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } },
+      { type: 'text', text: 'Read this nutrition information panel.' }
+    ], { effort: 'low', schema: LABEL_SCHEMA }));
+    if (!session) return;
+    backToFoods();
+    if (!j.found) {
+      showSheetError('No nutrition panel found in that photo. Try again closer, with the table flat and in focus.');
+      return;
+    }
+    foodEditId = '';
+    fillLabelForm({ name: j.name, serving_label: j.serving_label, serving_g: Number(j.serving_g) || 0,
+      kcal: j.kcal_100g, p: j.protein_100g, c: j.carbs_100g, f: j.fat_100g });
+  } catch(err) {
+    if (!session || err.name === 'AbortError') return;
+    backToFoods();
+    showSheetError(err.message);
+  }
+}
+/* entry points from the first screen of + Meal */
+$('#myFoodsBtn').addEventListener('click', () => {
+  if (!session) return;
+  setSheetState('result');
+  renderItems();
+  openFoods();
+});
+$('#scanLblBtn').addEventListener('click', () => $('#lblIn').click());
 
 /* ================= product search (Open Food Facts) ================= */
 let prodResults = [];
@@ -1741,7 +1987,7 @@ async function addPhoto(file){
 $('#refineBtn').addEventListener('click', async () => {
   const note = $('#refineIn').value.trim();
   if (!note || !session) return;
-  if (!session.imgs.length && !session.desc) return;
+  if (!session.imgs.length && !session.desc && !session.items.length) return;
   setSheetState('busy', 'Re-checking');
   try {
     let ctx = '';
@@ -2368,7 +2614,8 @@ async function doPush(){
   try {
     const kinds = {
       log: stripLogForSync(getLog()), exercise: getEx(), weights: getWeights(),
-      favs: stripFavsForSync(getFavs()), profile: profileLite(getSettings())
+      favs: stripFavsForSync(getFavs()), profile: profileLite(getSettings()),
+      foods: getFoods()
     };
     for (const k of Object.keys(kinds)) {
       await supa('cc_push_state', { p_handle: c.handle, p_pass: c.pass, p_kind: k, p_data: kinds[k], p_updated: stamp });
@@ -2396,7 +2643,7 @@ async function doPull(){
     const last = s.syncLast || {};
     let changed = false;
     const store = {
-      log: LKEY, exercise: EKEY, weights: WKEY, favs: FKEY
+      log: LKEY, exercise: EKEY, weights: WKEY, favs: FKEY, foods: DKEY
     };
     rows.forEach(r => {
       const newer = !last[r.kind] || r.updated_at > last[r.kind];
@@ -2750,6 +2997,7 @@ $('#authAction').addEventListener('click', async () => {
     localStorage.removeItem(EKEY);
     localStorage.removeItem(WKEY);
     localStorage.removeItem(FKEY);
+    localStorage.removeItem(DKEY);
     const s = getSettings();
     ['goal','pgoal','sex','age','heightCm','weightKg','activity','targetW','targetDate',
      'syncHandle','syncPass','syncLast','skipAuth','strava','stravaChecked'].forEach(k => delete s[k]);
@@ -2841,6 +3089,7 @@ $('#expJson').addEventListener('click', () => {
       settings: safe,
       weights: getWeights(),
       favourites: getFavs(),
+      foods: getFoods(),
       exercise: getEx(),
       log: getLog()
     }, null, 2),
@@ -2854,6 +3103,7 @@ $('#wipeBtn').addEventListener('click', () => {
   localStorage.removeItem(FKEY);
   localStorage.removeItem(EKEY);
   localStorage.removeItem(STRAVA_SKIP);
+  localStorage.removeItem(DKEY);
   closeSettings();
   applyTheme('light');
   renderFavRow();
