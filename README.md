@@ -2,7 +2,7 @@
 
 A single-file, photo-first calorie tracker built for iPhone, hosted on GitHub Pages.
 
-Snap or describe a meal and Claude estimates the items, grams, calories and macros. Everything is editable, favourites log in one tap, the last meal can be copied in one tap, Strava activities (with calories) flow in automatically, exercise can also be typed or pasted from a Garmin summary, and a profile drives maintenance and target-weight maths.
+Snap or describe a meal and Claude estimates the items, grams, calories and macros. Everything is editable, favourites log in one tap, the last meal can be copied in one tap, Garmin activities (with your watch's calories) flow in automatically, nutrition labels can be scanned into a My foods list, exercise can also be typed or pasted, and a profile drives maintenance and target-weight maths.
 
 ## How it works
 
@@ -19,9 +19,12 @@ Replace `index.html` on the `main` branch and GitHub Pages does the rest. On the
 
 Run `cc_migration.sql` in the Supabase SQL editor, then enter the project URL, anon key, a handle and a sync code in the app's Settings. The sync code is the password for your data; keep a copy.
 
-## Strava setup (one-off)
+## Garmin setup (one-off)
 
-1. Create a Strava API app at https://www.strava.com/settings/api. Set **Authorization Callback Domain** to the GitHub Pages domain (for example `gjoel.github.io`).
-2. In Supabase, go to Edge Functions > Secrets and add `STRAVA_CLIENT_ID` and `STRAVA_CLIENT_SECRET` from that Strava page.
-3. `strava_migration.sql` creates the `cc_strava` table, and `supabase/functions/strava/index.ts` is the edge function that holds the tokens. Both are already applied to the project.
-4. In the app: Settings > Connect with Strava. New activities from that day onwards are imported each time the app opens, and their calories add to the day's allowance. Deleting an imported activity stops it coming back.
+1. In Garmin Connect, create a Personal API key at https://connect.garmin.com/app/settings/personalApiToken (choose the 1 year option and copy it, it is shown only once).
+2. In the app: Settings > Connect Garmin, paste the key, tap Save key and connect.
+3. New activities from that day onwards are imported each time the app opens, with the calories your watch recorded. Deleting an imported activity stops it coming back.
+
+`garmin_migration.sql` creates the `cc_garmin` table and `supabase/functions/garmin/index.ts` is the edge function that holds the key and swaps it for Garmin's 24-hour token. Both are applied to the project.
+
+The earlier Strava link (`strava_migration.sql`, `supabase/functions/strava`) is no longer used by the app.

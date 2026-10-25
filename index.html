@@ -276,6 +276,7 @@ textarea{width:100%; resize:vertical;}
 .copy-last .cl-name{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .copy-last .cl-kcal{font-family:var(--mono); font-size:13px; color:var(--ash); flex:none;}
 .m-sub .src{color:#FC4C02;}
+.m-sub .src.garmin{color:#1E8FD6;}
 .row-btns{display:flex; gap:8px; margin-top:12px;}
 .row-btns .ghost{flex:1; padding:11px 6px;}
 .primary{background:var(--flame); color:#1C1207; border-radius:14px; padding:14px 22px;
@@ -594,7 +595,7 @@ select{-webkit-appearance:none; appearance:none;
     </div>
 
     <div id="stExDesc">
-      <textarea id="exIn" rows="4" placeholder="e.g. 45 min easy run, or paste your Strava / Garmin activity summary here and I'll pull out the numbers"></textarea>
+      <textarea id="exIn" rows="4" placeholder="e.g. 45 min easy run, or paste an activity summary here and I'll pull out the numbers"></textarea>
       <button id="exGo" class="primary">Work it out</button>
       <button id="exManual" class="ghost small">Or add manually</button>
       <div class="desc-hint">Calories stated by your watch are used exactly. Otherwise it estimates from the activity, duration and your bodyweight.</div>
@@ -807,11 +808,18 @@ select{-webkit-appearance:none; appearance:none;
     <div class="set-note" id="syncStat">Not signed in.</div>
     <button id="authAction" class="ghost" style="width:100%">Sign in</button>
 
-    <div class="eyebrow">Strava</div>
-    <div class="set-note" style="margin:0 0 12px">Link Strava and each new activity, with its calories, lands in your log by itself and adds to what you can eat that day.</div>
-    <div class="set-note" id="stravaStat">Not connected.</div>
-    <button id="stravaBtn" class="ghost" style="width:100%">Connect with Strava</button>
-    <button id="stravaNow" class="ghost small" hidden>Check Strava now</button>
+    <div class="eyebrow">Garmin</div>
+    <div class="set-note" style="margin:0 0 12px">Link Garmin and each new activity, with the calories your watch measured, lands in your log by itself and adds to what you can eat that day.</div>
+    <div class="set-note" id="garminStat">Not connected.</div>
+    <div id="garminKeyRow" class="set-row" hidden>
+      <label for="garminKeyIn">Garmin Personal API key</label>
+      <div class="keywrap">
+        <input id="garminKeyIn" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste the key from Garmin Connect">
+      </div>
+      <div class="set-note">Create one in <a href="https://connect.garmin.com/app/settings/personalApiToken" target="_blank" rel="noopener">Garmin Connect, Personal API</a> and choose the 1 year option. The key is kept on the sync server, not on this phone.</div>
+    </div>
+    <button id="garminBtn" class="ghost" style="width:100%">Connect Garmin</button>
+    <button id="garminNow" class="ghost small" hidden>Check Garmin now</button>
 
     <div class="eyebrow">Your data</div>
     <div class="set-btns">
@@ -1392,7 +1400,8 @@ function renderDay(){
         '<div class="m-thumb blank"><svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>' +
         '<div class="m-body"><div class="m-name">' + esc(x.name) + '</div>' +
         '<div class="m-sub">' + esc(x.time || '') + (x.time ? ' &middot; ' : '') + r0(x.mins) + ' min' +
-        (x.src === 'strava' ? ' &middot; <span class="src">Strava</span>' : '') + '</div></div>' +
+        (x.src === 'garmin' ? ' &middot; <span class="src garmin">Garmin</span>'
+          : x.src === 'strava' ? ' &middot; <span class="src">Strava</span>' : '') + '</div></div>' +
         '<div class="m-kcal burn">&#8722;' + nf.format(r0(x.kcal)) + '</div></div>';
     }
     const m = r.m;
@@ -2177,7 +2186,7 @@ $('#exSave').addEventListener('click', () => {
     .map(x => ({
       id: x.id, name: (x.name || '').trim() || 'Exercise',
       mins: r0(x.mins), kcal: r0(x.kcal), time: x.time || nowHM(),
-      sid: x.sid || ''
+      sid: x.sid || '', src: x.src || ''
     }))
     .filter(x => x.kcal > 0 || x.mins > 0);
   if (!rows.length) { showExError('Add at least one activity with minutes or calories.'); return; }
@@ -2190,7 +2199,7 @@ $('#exSave').addEventListener('click', () => {
   (exlog[dk] = exlog[dk] || []).push.apply(exlog[dk],
     rows.map((x, i) => Object.assign({ id: (exSession.mode === 'edit' && i === 0) ? exSession.id : uid(),
       name: x.name, mins: x.mins, kcal: x.kcal, time: x.time },
-      x.sid ? { src: 'strava', sid: x.sid } : {})));
+      x.sid ? { src: x.src || 'strava', sid: x.sid } : {})));
   setEx(exlog);
   viewDate = dk;
   closeExercise();
@@ -2200,7 +2209,7 @@ function openExEdit(dateKey, id){
   const x = (getEx()[dateKey] || []).find(e => e.id === id);
   if (!x) return;
   exSession = { mode: 'edit', id: x.id, date: dateKey, origDate: dateKey,
-    rows: [{ id: uid(), name: x.name, mins: x.mins, kcal: x.kcal, time: x.time || '', sid: x.sid || '' }] };
+    rows: [{ id: uid(), name: x.name, mins: x.mins, kcal: x.kcal, time: x.time || '', sid: x.sid || '', src: x.src || '' }] };
   $('#exDate').value = dateKey;
   $('#exDate').max = todayISO();
   $('#exDel').hidden = false;
@@ -2214,7 +2223,7 @@ $('#exDel').addEventListener('click', () => {
   if (!confirm('Delete this exercise entry?')) return;
   const exlog = getEx();
   const gone = (exlog[exSession.origDate] || []).find(x => x.id === exSession.id);
-  if (gone && gone.sid) stravaSkip(gone.sid);
+  if (gone && gone.sid && gone.src === 'garmin') garminSkip(gone.sid);
   if (exlog[exSession.origDate]) {
     exlog[exSession.origDate] = exlog[exSession.origDate].filter(x => x.id !== exSession.id);
     if (!exlog[exSession.origDate].length) delete exlog[exSession.origDate];
@@ -2731,128 +2740,117 @@ async function renderCompetition(){
   }
 }
 
-/* ================= Strava ================= */
-const STRAVA_SKIP = 'ml.stravaSkip';
-const STRAVA_EVERY = 10 * 60 * 1000;
-/* Rough MET values for when Strava has no calorie figure. */
+/* ================= Garmin ================= */
+const GARMIN_SKIP = 'ml.garminSkip';
+const GARMIN_EVERY = 10 * 60 * 1000;
+/* Rough MET values for when Garmin has no calorie figure. */
 const MET = {
-  Run: 9.8, TrailRun: 9.5, VirtualRun: 9.8, Ride: 7.5, VirtualRide: 7, MountainBikeRide: 8.5,
-  GravelRide: 8, EBikeRide: 4, Walk: 3.8, Hike: 6, Swim: 8, WeightTraining: 5, Workout: 5,
-  Crossfit: 8, HighIntensityIntervalTraining: 8, Yoga: 2.5, Pilates: 3, Rowing: 7, Surfing: 3.5,
-  Kayaking: 5, StandUpPaddling: 6, Elliptical: 5, StairStepper: 8, RockClimbing: 7.5,
-  Tennis: 7, Soccer: 7, Golf: 4.5
+  running: 9.8, trail_running: 9.5, treadmill_running: 9.8, track_running: 10, cycling: 7.5,
+  road_biking: 7.5, indoor_cycling: 7, mountain_biking: 8.5, gravel_cycling: 8, walking: 3.8,
+  hiking: 6, lap_swimming: 8, open_water_swimming: 8, strength_training: 5, indoor_climbing: 5,
+  bouldering: 5, rock_climbing: 5.8, yoga: 2.5, pilates: 3, hiit: 8, indoor_rowing: 7,
+  rowing: 7, surfing: 3.5, elliptical: 5, stair_climbing: 8, tennis: 7, golf: 4.5
 };
-async function stravaFn(action, body){
+async function garminFn(action, body){
   const c = syncCfg();
   let res;
   try {
-    res = await fetch(c.url + '/functions/v1/strava', {
+    res = await fetch(c.url + '/functions/v1/garmin', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'apikey': c.key, 'authorization': 'Bearer ' + c.key },
-      body: JSON.stringify(Object.assign({ action: action }, body || {}))
+      body: JSON.stringify(Object.assign({ action: action, handle: c.handle, pass: c.pass }, body || {}))
     });
   } catch(e) {
-    throw new Error('Could not reach the Strava link. Check your connection.');
+    throw new Error('Could not reach the Garmin link. Check your connection.');
   }
   const d = await res.json().catch(() => ({}));
-  if (!res.ok || (d.error && d.connected !== false)) throw new Error(d.error || ('Strava link failed (' + res.status + ')'));
+  if (!res.ok || (d.error && d.connected !== false)) throw new Error(d.error || ('Garmin link failed (' + res.status + ')'));
   return d;
 }
-function stravaAuth(){ const c = syncCfg(); return { handle: c.handle, pass: c.pass }; }
-function getStravaSkip(){ try { return JSON.parse(localStorage.getItem(STRAVA_SKIP)) || []; } catch(e){ return []; } }
-function stravaSkip(sid){
-  const a = getStravaSkip();
-  if (a.indexOf(sid) === -1) { a.push(sid); localStorage.setItem(STRAVA_SKIP, JSON.stringify(a.slice(-300))); }
-  if (syncReady()) stravaFn('skip', Object.assign(stravaAuth(), { sid: sid })).catch(() => {});
+function getGarminSkip(){ try { return JSON.parse(localStorage.getItem(GARMIN_SKIP)) || []; } catch(e){ return []; } }
+function garminSkip(sid){
+  const a = getGarminSkip();
+  if (a.indexOf(sid) === -1) { a.push(sid); localStorage.setItem(GARMIN_SKIP, JSON.stringify(a.slice(-300))); }
+  if (syncReady()) garminFn('skip', { sid: sid }).catch(() => {});
 }
-function stravaKcal(a){
+function garminKcal(a){
   if (Number(a.calories) > 0) return r0(a.calories);
-  /* Ride power data: kJ of work is very close to kcal burned. */
-  if (Number(a.kilojoules) > 0) return r0(a.kilojoules);
   const kg = currentWeightKg() || 75;
-  return r0((MET[a.sport_type] || 6) * kg * (Number(a.moving_time) || 0) / 3600);
+  return r0((MET[a.type] || 6) * kg * (Number(a.moving_s) || 0) / 3600);
 }
 function localISO(d){ return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
-function setStravaStat(msg){ const el = $('#stravaStat'); if (el) el.textContent = msg; }
-function updateStravaUI(){
+function hmToMin(t){ const m = /^(\d\d):(\d\d)/.exec(t || ''); return m ? Number(m[1]) * 60 + Number(m[2]) : -1; }
+function setGarminStat(msg){ const el = $('#garminStat'); if (el) el.textContent = msg; }
+function updateGarminUI(){
   const s = getSettings();
-  const btn = $('#stravaBtn');
+  const btn = $('#garminBtn');
   if (!syncReady()) {
-    setStravaStat('Sign in above first, so Strava has an account to sync into.');
-    btn.textContent = 'Connect with Strava';
+    setGarminStat('Sign in above first, so Garmin has an account to sync into.');
+    btn.textContent = 'Connect Garmin';
     btn.disabled = true;
-    $('#stravaNow').hidden = true;
+    $('#garminNow').hidden = true;
+    $('#garminKeyRow').hidden = true;
     return;
   }
   btn.disabled = false;
-  if (s.strava) {
-    setStravaStat('Connected' + (s.strava.athlete ? ' as ' + s.strava.athlete : '') +
-      '. New activities come in each time you open the app.' +
-      (s.stravaChecked ? ' Last checked ' + new Date(s.stravaChecked).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }) + '.' : ''));
-    btn.textContent = 'Disconnect Strava';
-    $('#stravaNow').hidden = false;
+  if (s.garmin) {
+    setGarminStat('Connected. New activities come in each time you open the app.' +
+      (s.garminChecked ? ' Last checked ' + new Date(s.garminChecked).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }) + '.' : ''));
+    btn.textContent = 'Disconnect Garmin';
+    $('#garminNow').hidden = false;
+    $('#garminKeyRow').hidden = true;
   } else {
-    setStravaStat('Not connected.');
-    btn.textContent = 'Connect with Strava';
-    $('#stravaNow').hidden = true;
+    setGarminStat('Not connected.');
+    btn.textContent = $('#garminKeyRow').hidden ? 'Connect Garmin' : 'Save key and connect';
+    $('#garminNow').hidden = true;
   }
 }
-async function stravaConnect(){
-  if (!syncReady()) { toast('Sign in first'); return; }
-  setStravaStat('Opening Strava...');
-  try {
-    const r = await stravaFn('begin', stravaAuth());
-    const back = location.origin + location.pathname;
-    location.href = 'https://www.strava.com/oauth/authorize' +
-      '?client_id=' + encodeURIComponent(r.client_id) +
-      '&redirect_uri=' + encodeURIComponent(back) +
-      '&response_type=code&approval_prompt=auto&scope=' + encodeURIComponent('read,activity:read_all') +
-      '&state=' + encodeURIComponent(r.state);
-  } catch(err) {
-    setStravaStat(err.message);
-  }
-}
-/* Runs on boot. Strava sends us back here with ?code=...&state=... */
-async function stravaHandleRedirect(){
-  const q = new URLSearchParams(location.search);
-  if (!q.has('state') || !(q.has('code') || q.has('error'))) return;
-  history.replaceState(null, '', location.pathname);
-  if (q.get('error')) { toast('Strava connection cancelled'); return; }
-  if ((q.get('scope') || '').indexOf('activity:read') === -1) {
-    toast('Strava needs permission to view your activities. Connect again and leave that box ticked.');
+async function garminConnect(){
+  const row = $('#garminKeyRow');
+  if (row.hidden) {
+    row.hidden = false;
+    updateGarminUI();
+    setTimeout(() => $('#garminKeyIn').focus(), 100);
     return;
   }
+  const key = $('#garminKeyIn').value.trim();
+  if (!key) { $('#garminKeyIn').focus(); return; }
+  setGarminStat('Checking the key with Garmin...');
+  $('#garminBtn').disabled = true;
   try {
-    const r = await stravaFn('connect', { code: q.get('code'), state: q.get('state') });
+    await garminFn('connect', { key: key });
+    $('#garminKeyIn').value = '';
     const s = getSettings();
-    s.strava = { athlete: r.athlete || '' };
-    delete s.stravaChecked;
+    s.garmin = { connected: true };
+    delete s.garminChecked;
     localStorage.setItem(SKEY, JSON.stringify(s));
-    toast(syncReady() ? 'Strava connected' : 'Strava connected. Head back to the Meal Sync app.');
+    toast('Garmin connected');
+    updateGarminUI();
+    garminSync(true);
   } catch(err) {
-    toast('Strava: ' + err.message);
+    setGarminStat(err.message);
+  } finally {
+    $('#garminBtn').disabled = false;
   }
 }
-let stravaBusy = false;
-async function stravaSync(force){
-  if (!syncReady() || stravaBusy) return;
+let garminBusy = false;
+async function garminSync(force){
+  if (!syncReady() || garminBusy) return;
   const st = getSettings();
-  if (!force && st.stravaChecked && Date.now() - st.stravaChecked < STRAVA_EVERY) return;
-  stravaBusy = true;
-  if (force) setStravaStat('Checking Strava...');
+  if (!force && st.garminChecked && Date.now() - st.garminChecked < GARMIN_EVERY) return;
+  garminBusy = true;
+  if (force) setGarminStat('Checking Garmin...');
   try {
     const known = [];
     const exNow = getEx();
-    Object.keys(exNow).forEach(d => exNow[d].forEach(x => { if (x.sid) known.push(x.sid); }));
-    const skip = getStravaSkip();
-    const after = Math.floor(Date.now() / 1000) - 7 * 86400;
-    const r = await stravaFn('activities', Object.assign(stravaAuth(), {
-      after: after, known: known.concat(skip).slice(-400)
-    }));
+    Object.keys(exNow).forEach(d => exNow[d].forEach(x => { if (x.sid && x.src === 'garmin') known.push(x.sid); }));
+    const skip = getGarminSkip();
+    const r = await garminFn('activities', {
+      startDate: isoDaysAgo(7), endDate: todayISO(), known: known.concat(skip).slice(-400)
+    });
     const s = getSettings();
-    s.stravaChecked = Date.now();
-    s.strava = r.connected ? { athlete: r.athlete || '' } : null;
-    if (!s.strava) delete s.strava;
+    s.garminChecked = Date.now();
+    if (r.connected) s.garmin = { connected: true }; else delete s.garmin;
     localStorage.setItem(SKEY, JSON.stringify(s));
     if (r.error) toast(r.error);
     if (!r.connected) return;
@@ -2861,53 +2859,57 @@ async function stravaSync(force){
        anything you already logged by hand is not doubled up. */
     const fromDay = r.since ? localISO(new Date(r.since * 1000)) : '';
     const have = new Set(known.concat(skip));
+    const exlog = getEx();
     const fresh = (r.activities || []).filter(a => {
-      const day = String(a.start_date_local || '').slice(0, 10);
-      return /^\d{4}-\d\d-\d\d$/.test(day) && day >= fromDay && day <= todayISO() && !have.has(a.id);
+      const day = String(a.start_local || '').slice(0, 10);
+      if (!/^\d{4}-\d\d-\d\d$/.test(day) || day < fromDay || day > todayISO() || have.has(a.id)) return false;
+      /* Skip one Strava already brought in (same day, start within 10 min). */
+      const t = hmToMin(a.start_local.slice(11, 16));
+      return !(exlog[day] || []).some(x => x.src === 'strava' && t >= 0 && Math.abs(hmToMin(x.time) - t) <= 10);
     });
     if (!fresh.length) return;
-    const exlog = getEx();
     let kcal = 0;
     fresh.forEach(a => {
-      const day = a.start_date_local.slice(0, 10);
+      const day = a.start_local.slice(0, 10);
+      const hm = a.start_local.slice(11, 16);
       const entry = {
-        id: uid(), name: a.name || a.sport_type || 'Activity',
-        mins: r0((Number(a.moving_time) || 0) / 60), kcal: stravaKcal(a),
-        time: /^\d\d:\d\d$/.test(a.start_date_local.slice(11, 16)) ? a.start_date_local.slice(11, 16) : '',
-        src: 'strava', sid: a.id
+        id: uid(), name: a.name || (a.type ? a.type.charAt(0).toUpperCase() + a.type.slice(1).replace(/_/g, ' ') : 'Activity'),
+        mins: r0((Number(a.moving_s) || 0) / 60), kcal: garminKcal(a),
+        time: /^\d\d:\d\d$/.test(hm) ? hm : '',
+        src: 'garmin', sid: a.id
       };
       kcal += entry.kcal;
       (exlog[day] = exlog[day] || []).push(entry);
     });
     setEx(exlog);
     renderDay();
-    toast('Strava: ' + fresh.length + (fresh.length === 1 ? ' activity' : ' activities') +
+    toast('Garmin: ' + fresh.length + (fresh.length === 1 ? ' activity' : ' activities') +
       ', ' + nf.format(r0(kcal)) + ' kcal');
   } catch(err) {
-    if (force) toast('Strava: ' + err.message);
+    if (force) toast('Garmin: ' + err.message);
   } finally {
-    stravaBusy = false;
-    updateStravaUI();
+    garminBusy = false;
+    updateGarminUI();
   }
 }
-$('#stravaBtn').addEventListener('click', async () => {
-  if (!getSettings().strava) { stravaConnect(); return; }
-  if (!confirm('Disconnect Strava? Activities already in your log stay there.')) return;
+$('#garminBtn').addEventListener('click', async () => {
+  if (!getSettings().garmin) { garminConnect(); return; }
+  if (!confirm('Disconnect Garmin? Activities already in your log stay there.')) return;
   try {
-    await stravaFn('disconnect', stravaAuth());
+    await garminFn('disconnect');
     const s = getSettings();
-    delete s.strava;
-    delete s.stravaChecked;
+    delete s.garmin;
+    delete s.garminChecked;
     localStorage.setItem(SKEY, JSON.stringify(s));
-    toast('Strava disconnected');
+    toast('Garmin disconnected');
   } catch(err) {
-    toast('Strava: ' + err.message);
+    toast('Garmin: ' + err.message);
   }
-  updateStravaUI();
+  updateGarminUI();
 });
-$('#stravaNow').addEventListener('click', () => stravaSync(true));
+$('#garminNow').addEventListener('click', () => garminSync(true));
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') stravaSync(false);
+  if (document.visibilityState === 'visible') garminSync(false);
 });
 
 /* ================= welcome / user gate ================= */
@@ -2981,7 +2983,7 @@ $('#authGo').addEventListener('click', async () => {
     if (authMode === 'exist') { await doPull(); }
     doPush();
     renderDay();
-    stravaSync(true);
+    garminSync(true);
   } catch(err) {
     $('#authNote').textContent = 'Could not reach the server. ' + err.message;
   } finally {
@@ -3000,8 +3002,9 @@ $('#authAction').addEventListener('click', async () => {
     localStorage.removeItem(DKEY);
     const s = getSettings();
     ['goal','pgoal','sex','age','heightCm','weightKg','activity','targetW','targetDate',
-     'syncHandle','syncPass','syncLast','skipAuth','strava','stravaChecked'].forEach(k => delete s[k]);
-    localStorage.removeItem(STRAVA_SKIP);
+     'syncHandle','syncPass','syncLast','skipAuth','strava','stravaChecked','garmin','garminChecked'].forEach(k => delete s[k]);
+    localStorage.removeItem(GARMIN_SKIP);
+    localStorage.removeItem('ml.stravaSkip');
     localStorage.setItem(SKEY, JSON.stringify(s));
     renderFavRow();
     renderDay();
@@ -3023,7 +3026,8 @@ function openSettings(needKey){
   $('#keyIn').value = s.key || '';
   setSyncStat(syncReady() ? 'Signed in as ' + s.syncHandle + '.' : 'Not signed in.');
   $('#authAction').textContent = syncReady() ? 'Log out / switch user' : 'Sign in';
-  updateStravaUI();
+  $('#garminKeyRow').hidden = true;
+  updateGarminUI();
   $('#themeIn').value = (s.theme === 'dark') ? 'dark' : 'light';
   const sel = $('#modelIn');
   sel.innerHTML = MODELS.map(m => '<option value="' + m[0] + '">' + m[1] + '</option>').join('');
@@ -3102,7 +3106,8 @@ $('#wipeBtn').addEventListener('click', () => {
   localStorage.removeItem(WKEY);
   localStorage.removeItem(FKEY);
   localStorage.removeItem(EKEY);
-  localStorage.removeItem(STRAVA_SKIP);
+  localStorage.removeItem(GARMIN_SKIP);
+  localStorage.removeItem('ml.stravaSkip');
   localStorage.removeItem(DKEY);
   closeSettings();
   applyTheme('light');
@@ -3122,10 +3127,11 @@ $('#setSheet').addEventListener('click', e => { if (e.target === e.currentTarget
 applyTheme(getSettings().theme);
 renderFavRow();
 renderDay();
-stravaHandleRedirect().then(() => {
-  if (syncReady()) doPull().then(() => stravaSync(false));
-  else if (!getSettings().skipAuth) openAuth();
-});
+/* Strava has been replaced by Garmin; tidy away its old local state. */
+(function(){ const s = getSettings(); if (s.strava || s.stravaChecked) { delete s.strava; delete s.stravaChecked;
+  localStorage.setItem(SKEY, JSON.stringify(s)); } })();
+if (syncReady()) doPull().then(() => garminSync(false));
+else if (!getSettings().skipAuth) openAuth();
 </script>
 </body>
 </html>
