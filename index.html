@@ -101,6 +101,8 @@ textarea{width:100%; resize:vertical;}
 .goal-lbl{font-family:var(--mono); font-size:11px; letter-spacing:.1em; color:var(--ash);
   margin-top:7px; text-transform:uppercase;}
 .goal-lbl .over{color:var(--danger);}
+.goal-lbl b{color:var(--text); font-weight:600;}
+.goal-lbl .zone{color:var(--flame);}
 
 /* ---------- dashboard: macro tiles ---------- */
 .mtiles{display:flex; gap:8px; margin-top:16px; text-align:left;}
@@ -723,9 +725,20 @@ select{-webkit-appearance:none; appearance:none;
     <button id="usePlanBtn" class="ghost" hidden>Use suggested calorie goal</button>
 
     <div class="eyebrow">Daily goals</div>
+    <div class="set-note" style="margin:0 0 12px">Each day the app adds up what you burned (your body plus logged exercise) and aims for you to eat this much less.</div>
     <div class="set-grid">
       <div class="set-row">
-        <label for="goalIn">Calories</label>
+        <label for="defMinIn">Eat at least (kcal under)</label>
+        <input id="defMinIn" type="number" inputmode="numeric" step="any" min="0" placeholder="500">
+      </div>
+      <div class="set-row">
+        <label for="defMaxIn">But no more than (kcal under)</label>
+        <input id="defMaxIn" type="number" inputmode="numeric" step="any" min="0" placeholder="1000">
+      </div>
+    </div>
+    <div class="set-grid">
+      <div class="set-row" id="goalRow">
+        <label for="goalIn">Calories (used if your details above are blank)</label>
         <input id="goalIn" type="number" inputmode="numeric" step="any" min="0" placeholder="e.g. 2400">
       </div>
       <div class="set-row">
@@ -1176,6 +1189,24 @@ function currentWeightKg(){
   if (keys.length) return Number(w[keys[keys.length - 1]]) || null;
   return Number(getSettings().weightKg) || null;
 }
+/* Calories your body burns in a day before logged exercise (Mifflin-St Jeor x activity). */
+function maintenanceKcal(st){
+  const w = currentWeightKg() || Number(st.weightKg) || 0;
+  const age = Number(st.age), ht = Number(st.heightCm);
+  if (!st.sex || !(age > 0) || !(ht > 0) || !(w > 0) || !ACTIVITY[st.activity]) return 0;
+  return Math.round((10 * w + 6.25 * ht - 5 * age + (st.sex === 'm' ? 5 : -161)) * ACTIVITY[st.activity]);
+}
+function deficitAim(st){
+  const lo = Number(st.defMin) > 0 ? Number(st.defMin) : 500;
+  const hi = Number(st.defMax) > 0 ? Number(st.defMax) : 1000;
+  return { min: Math.min(lo, hi), max: Math.max(lo, hi) };
+}
+/* The most you can eat on a day with no exercise and still hit the smaller deficit.
+   Falls back to a typed-in calorie goal when the profile is incomplete. */
+function goalFor(st){
+  const m = maintenanceKcal(st);
+  return m ? m - deficitAim(st).min : (Number(st.goal) || 0);
+}
 function dayBurn(exlog, iso){
   return (exlog[iso] || []).reduce((a, x) => a + (Number(x.kcal) || 0), 0);
 }
@@ -1225,7 +1256,7 @@ function renderDash(st, log, tot, burned){
 
   const days = lastNDaysEnding(viewDate, 7);
   const vals = days.map(d => r0(dayTotals(log, d).kcal));
-  const goal = Number(st.goal) || 0;
+  const goal = goalFor(st);
   let mx = Math.max(1, goal);
   vals.forEach(v => { if (v > mx) mx = v; });
   $('#wkLbl').textContent = viewDate === todayISO() ? 'Last 7 days'
@@ -1362,8 +1393,29 @@ function renderDay(){
   $('#dayKcal').textContent = nf.format(r0(tot.kcal));
 
   const goal = Number(st.goal) || 0;
+  const maint = maintenanceKcal(st);
   const gw = $('#goalWrap');
-  if (goal > 0) {
+  if (maint > 0) {
+    /* Deficit mode: total burned today, then a 500-1000 under target band. */
+    gw.hidden = false;
+    const aim = deficitAim(st);
+    const burn = maint + burned;
+    const hi = burn - aim.min;
+    const lo = Math.max(st.sex === 'f' ? 1200 : 1500, burn - aim.max);
+    const eaten = tot.kcal, under = burn - eaten;
+    const T = 24, on = Math.max(0, Math.min(T, Math.round(T * eaten / Math.max(1, hi))));
+    let ticks = '';
+    for (let i = 0; i < T; i++) ticks += '<i class="' + (i < on ? 'on' : '') + '"></i>';
+    $('#ticks').innerHTML = ticks;
+    let status;
+    if (eaten > burn) status = '<span class="over">' + nf.format(r0(eaten - burn)) + ' over what you burned</span>';
+    else if (eaten > hi) status = '<span class="over">only ' + nf.format(r0(under)) + ' under, aim is ' + nf.format(aim.min) + '+</span>';
+    else if (eaten >= lo) status = '<span class="zone">' + nf.format(r0(under)) + ' under, in the zone</span>';
+    else status = nf.format(r0(under)) + ' under &middot; ' + nf.format(r0(hi - eaten)) + ' left to eat';
+    $('#goalLbl').innerHTML = 'burned <b>' + nf.format(r0(burn)) + '</b>' +
+      (burned > 0 ? ' (' + nf.format(maint) + ' body + ' + nf.format(r0(burned)) + ' exercise)' : '') +
+      ' &middot; aim ' + nf.format(r0(lo)) + '-' + nf.format(r0(hi)) + '<br>' + status;
+  } else if (goal > 0) {
     gw.hidden = false;
     const eff = goal + burned;
     const T = 24, on = Math.max(0, Math.min(T, Math.round(T * tot.kcal / eff)));
@@ -2337,7 +2389,7 @@ function renderTrends(){
     return (i % 5 === 0 || i === n - 1) ? String(dd.getDate()) : '';
   });
 
-  $('#trKcal').innerHTML = chartBars(kcalVals, kAvg, Number(st.goal) || 0, labels,
+  $('#trKcal').innerHTML = chartBars(kcalVals, kAvg, goalFor(st), labels,
     c.flameBar, c.flame);
   $('#trProt').innerHTML = chartBars(pVals, pAvg, Number(st.pgoal) || 0, labels,
     'rgba(' + c.ink + ',.3)', c.text);
@@ -2415,7 +2467,11 @@ function computePlan(){
   }
   const bmr = 10 * wNow + 6.25 * ht - 5 * age + (sex === 'm' ? 5 : -161);
   const tdee = Math.round(bmr * ACTIVITY[act]);
-  out.html = 'Maintenance &asymp; <b>' + nf.format(tdee) + '</b> kcal/day (at ' + r1(wNow) + ' kg)';
+  out.html = 'Maintenance &asymp; <b>' + nf.format(tdee) + '</b> kcal/day (at ' + r1(wNow) + ' kg), before exercise';
+  const dMin = parseFloat($('#defMinIn').value) || 500, dMax = parseFloat($('#defMaxIn').value) || 1000;
+  out.html += '<br>Eating ' + nf.format(r0(Math.min(dMin, dMax))) + '-' + nf.format(r0(Math.max(dMin, dMax))) +
+    ' under what you burn loses about <b>' + r1(Math.min(dMin, dMax) * 7 / 7700) + '-' + r1(Math.max(dMin, dMax) * 7 / 7700) + ' kg/week</b>';
+  out.complete = true;
   const pLo = r0(wNow * 1.6), pHi = r0(wNow * 2.2);
   out.html += '<br>Protein guide: ' + pLo + '-' + pHi + ' g/day (1.6-2.2 g/kg)';
 
@@ -2438,11 +2494,14 @@ function computePlan(){
     }
     if (delta > 0 && suggested < floor) {
       suggested = floor;
-      warn = 'Capped at ' + nf.format(floor) + ' kcal, the minimum for a sustainable plan. Extend the timeframe to reach the target safely.';
+      warn = 'That date would mean eating under ' + nf.format(floor) + ' kcal on rest days, which is too low to sustain. A later date, or more exercise, gets you there safely.';
     }
     const dir = delta > 0 ? '-' : '+';
     out.html += '<br>To ' + (delta >= 0 ? 'reach' : 'build to') + ' ' + r1(tW) + ' kg in ' + days +
-      ' days: <b>' + nf.format(suggested) + '</b> kcal/day (' + dir + r1(Math.abs(rate)) + ' kg/wk)';
+      ' days you need about <b>' + nf.format(r0(Math.abs(dailyAdj))) + '</b> kcal/day ' + (delta >= 0 ? 'under' : 'over') +
+      ' (' + dir + r1(Math.abs(rate)) + ' kg/wk)';
+    const reachW = delta > 0 ? Math.round((delta * 7700) / ((Math.min(dMin, dMax) + Math.max(dMin, dMax)) / 2) / 7) : 0;
+    if (reachW > 0) out.html += '<br>At the middle of your aim you would get there in about <b>' + reachW + ' weeks</b>';
     if (warn) out.html += '<span class="warn">' + warn + '</span>';
     out.suggested = suggested;
   }
@@ -2454,7 +2513,9 @@ function updatePlanPreview(){
   box.hidden = false;
   box.innerHTML = plan.html;
   const btn = $('#usePlanBtn');
-  if (plan.suggested) {
+  /* With full details the deficit aim drives the day, so a fixed calorie goal is not needed. */
+  $('#goalRow').hidden = !!plan.complete;
+  if (plan.suggested && !plan.complete) {
     btn.hidden = false;
     btn.textContent = 'Use ' + nf.format(plan.suggested) + ' kcal as my daily goal';
     btn.dataset.v = plan.suggested;
@@ -2462,7 +2523,7 @@ function updatePlanPreview(){
     btn.hidden = true;
   }
 }
-['sexIn','ageIn','htIn','wtIn','actIn','twIn','tdIn'].forEach(id => {
+['sexIn','ageIn','htIn','wtIn','actIn','twIn','tdIn','defMinIn','defMaxIn'].forEach(id => {
   $('#' + id).addEventListener('input', updatePlanPreview);
   $('#' + id).addEventListener('change', updatePlanPreview);
 });
@@ -2476,6 +2537,8 @@ function openProfile(){
   const s = getSettings();
   $('#goalIn').value = s.goal || '';
   $('#pgoalIn').value = s.pgoal || '';
+  $('#defMinIn').value = s.defMin || 500;
+  $('#defMaxIn').value = s.defMax || 1000;
   $('#sexIn').value = s.sex || '';
   $('#ageIn').value = s.age || '';
   $('#htIn').value = s.heightCm || '';
@@ -2495,6 +2558,8 @@ $('#savePro').addEventListener('click', () => {
   const num = (id) => { const v = parseFloat($('#' + id).value); return v > 0 ? v : null; };
   const g = num('goalIn');    if (g) s.goal = r0(g); else delete s.goal;
   const pg = num('pgoalIn');  if (pg) s.pgoal = r0(pg); else delete s.pgoal;
+  const dn = num('defMinIn'); if (dn) s.defMin = r0(dn); else delete s.defMin;
+  const dx = num('defMaxIn'); if (dx) s.defMax = r0(dx); else delete s.defMax;
   const ag = num('ageIn');    if (ag) s.age = r0(ag); else delete s.age;
   const ht = num('htIn');     if (ht) s.heightCm = r1(ht); else delete s.heightCm;
   const wt = num('wtIn');     if (wt) s.weightKg = r1(wt); else delete s.weightKg;
@@ -2556,6 +2621,7 @@ function setSyncStat(msg){
 function profileLite(s){
   return {
     goal: s.goal || null, pgoal: s.pgoal || null,
+    defMin: s.defMin || null, defMax: s.defMax || null,
     sex: s.sex || null, age: s.age || null, heightCm: s.heightCm || null,
     weightKg: s.weightKg || null, activity: s.activity || null,
     targetW: s.targetW || null, targetDate: s.targetDate || null
@@ -2563,7 +2629,7 @@ function profileLite(s){
 }
 function adoptProfile(data){
   const s = getSettings();
-  ['goal','pgoal','sex','age','heightCm','weightKg','activity','targetW','targetDate']
+  ['goal','pgoal','defMin','defMax','sex','age','heightCm','weightKg','activity','targetW','targetDate']
     .forEach(k => {
       if (data && data[k] != null && data[k] !== '') s[k] = data[k];
       else delete s[k];
@@ -2573,7 +2639,7 @@ function adoptProfile(data){
 function daySummaries(nDays){
   const log = getLog(), exlog = getEx();
   const s = getSettings();
-  const goal = Number(s.goal) || 0;
+  const goal = goalFor(s);
   return lastNDays(nDays).map(d => {
     const t = dayTotals(log, d);
     const burned = dayBurn(exlog, d);
@@ -3001,7 +3067,7 @@ $('#authAction').addEventListener('click', async () => {
     localStorage.removeItem(FKEY);
     localStorage.removeItem(DKEY);
     const s = getSettings();
-    ['goal','pgoal','sex','age','heightCm','weightKg','activity','targetW','targetDate',
+    ['goal','pgoal','defMin','defMax','sex','age','heightCm','weightKg','activity','targetW','targetDate',
      'syncHandle','syncPass','syncLast','skipAuth','strava','stravaChecked','garmin','garminChecked'].forEach(k => delete s[k]);
     localStorage.removeItem(GARMIN_SKIP);
     localStorage.removeItem('ml.stravaSkip');
