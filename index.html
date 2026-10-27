@@ -103,6 +103,15 @@ textarea{width:100%; resize:vertical;}
 .goal-lbl .over{color:var(--danger);}
 .goal-lbl b{color:var(--text); font-weight:600;}
 .goal-lbl .zone{color:var(--flame);}
+.zones{margin:10px auto 0; max-width:380px; font-family:var(--mono); font-size:11.5px; color:var(--ash); text-align:left;}
+.zn{display:grid; grid-template-columns:1fr 50px 76px 84px; gap:6px; padding:5px 10px; border-radius:8px; align-items:baseline;}
+.zn b{color:var(--text); font-weight:600; text-align:right;}
+.zn .rt, .zn .lf{text-align:right;}
+.zn.on{background:rgba(var(--ink),.07); color:var(--text);}
+.zn.on .nm::before{content:'\25B8  '; color:var(--flame);}
+.zn .over{color:var(--danger);}
+.fav-lbl{font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--ash);
+  align-self:center; flex-shrink:0; padding-right:2px;}
 
 /* ---------- dashboard: macro tiles ---------- */
 .mtiles{display:flex; gap:8px; margin-top:16px; text-align:left;}
@@ -403,6 +412,7 @@ select{-webkit-appearance:none; appearance:none;
   <div id="goalWrap" class="goal" hidden>
     <div id="ticks" class="ticks"></div>
     <div id="goalLbl" class="goal-lbl"></div>
+    <div id="zones" class="zones" hidden></div>
   </div>
   <div class="mtiles">
     <div class="mtile">
@@ -1301,7 +1311,7 @@ function renderFavRow(){
   const row = $('#favRow');
   if (!favs.length) { row.hidden = true; row.innerHTML = ''; return; }
   row.hidden = false;
-  row.innerHTML = favs.map(f => {
+  row.innerHTML = '<span class="fav-lbl">Regular<br>meals</span>' + favs.map(f => {
     const t = sumItems(f.items);
     const img = f.thumb
       ? '<img class="fc-thumb" src="' + f.thumb + '" alt="">'
@@ -1407,15 +1417,29 @@ function renderDay(){
     let ticks = '';
     for (let i = 0; i < T; i++) ticks += '<i class="' + (i < on ? 'on' : '') + '"></i>';
     $('#ticks').innerHTML = ticks;
-    let status;
-    if (eaten > burn) status = '<span class="over">' + nf.format(r0(eaten - burn)) + ' over what you burned</span>';
-    else if (eaten > hi) status = '<span class="over">only ' + nf.format(r0(under)) + ' under, aim is ' + nf.format(aim.min) + '+</span>';
-    else if (eaten >= lo) status = '<span class="zone">' + nf.format(r0(under)) + ' under, in the zone</span>';
-    else status = nf.format(r0(under)) + ' under &middot; ' + nf.format(r0(hi - eaten)) + ' left to eat';
     $('#goalLbl').innerHTML = 'burned <b>' + nf.format(r0(burn)) + '</b>' +
       (burned > 0 ? ' (' + nf.format(maint) + ' body + ' + nf.format(r0(burned)) + ' exercise)' : '') +
-      ' &middot; aim ' + nf.format(r0(lo)) + '-' + nf.format(r0(hi)) + '<br>' + status;
+      ' &middot; ' + (under >= 0 ? nf.format(r0(under)) + ' under' : '<span class="over">' + nf.format(r0(-under)) + ' over</span>');
+    /* One line per goal; targets move with the day's exercise. The highlighted
+       line is the most ambitious goal you are still on track for. */
+    const zones = [
+      ['Lose fast', lo],
+      ['Lose', hi],
+      ['Maintain', burn],
+      ['Gain', burn + 300]
+    ];
+    const cur = zones.findIndex(z => eaten <= z[1]);
+    $('#zones').hidden = false;
+    $('#zones').innerHTML = zones.map((z, i) => {
+      const rate = (z[1] - burn) * 7 / 7700;
+      const left = z[1] - eaten;
+      return '<div class="zn' + (i === cur ? ' on' : '') + '">' +
+        '<span class="nm">' + z[0] + '</span><b>' + nf.format(r0(z[1])) + '</b>' +
+        '<span class="rt">' + (Math.abs(rate) < 0.05 ? '&plusmn;0' : (rate > 0 ? '+' : '&minus;') + r1(Math.abs(rate))) + ' kg/wk</span>' +
+        '<span class="lf">' + (left >= 0 ? nf.format(r0(left)) + ' left' : '<span class="over">' + nf.format(r0(-left)) + ' over</span>') + '</span></div>';
+    }).join('');
   } else if (goal > 0) {
+    $('#zones').hidden = true;
     gw.hidden = false;
     const eff = goal + burned;
     const T = 24, on = Math.max(0, Math.min(T, Math.round(T * tot.kcal / eff)));
@@ -1429,6 +1453,7 @@ function renderDay(){
                  : '<span class="over">' + nf.format(r0(-left)) + ' over</span>');
   } else {
     gw.hidden = true;
+    $('#zones').hidden = true;
   }
 
   renderDash(st, log, tot, burned);
@@ -2806,6 +2831,51 @@ async function renderCompetition(){
   }
 }
 
+/* ================= one-off: Joel's foods and regular meal (27 Oct 2026) ================= */
+function seedJoel(){
+  const st = getSettings();
+  if (st.syncHandle !== 'joel' || st.seeded1027) return;
+  const foods = getFoods();
+  const upsert = f => {
+    const i = foods.findIndex(x => x.id === f.id);
+    if (i >= 0) foods[i] = Object.assign({}, foods[i], f); else foods.push(f);
+  };
+  if (!foods.some(x => x.id === 'seed-hashbrown')) {
+    upsert({ id: 'seed-hashbrown', name: 'Hash brown (Your Spud Co)', serving_g: 65, serving_label: 'piece',
+      per100: { kcal: 167, p: 2.9, c: 22.8, f: 7.1 } });
+  }
+  /* 838 kJ per 100 g; about 18 tenders per 1 kg bag, so roughly 55 g each. */
+  upsert({ id: 'seed-tenders', name: 'Sweet chilli chicken tenders (Woolworths)', serving_g: 55, serving_label: 'tender',
+    per100: { kcal: 200, p: 14.4, c: 19.6, f: 6.8 } });
+  /* 95 kJ per 100 g; 1 Australian tablespoon is 20 g. */
+  upsert({ id: 'seed-rosemary', name: 'Rosemary sauce', serving_g: 20, serving_label: 'tbsp',
+    per100: { kcal: 23, p: 0.6, c: 4.6, f: 0.1 } });
+  /* Typical frozen mixed veg (peas, corn, carrot, beans); scan the bag to replace. */
+  upsert({ id: 'seed-veg', name: 'Frozen mixed veg', serving_g: 150, serving_label: 'serve',
+    per100: { kcal: 62, p: 3.3, c: 9, f: 0.6 } });
+  setFoods(foods);
+
+  const favs = getFavs();
+  if (!favs.some(f => f.id === 'seed-regular')) {
+    const item = (fid, name, g) => {
+      const f = foods.find(x => x.id === fid), k = g / 100;
+      return { name: name, grams: g, kcal: r0(f.per100.kcal * k), p: r1(f.per100.p * k),
+               c: r1(f.per100.c * k), f: r1(f.per100.f * k), note: '' };
+    };
+    favs.push({ id: 'seed-regular', name: 'Tenders, hash browns & veg', thumb: '', items: [
+      item('seed-tenders', 'Chicken tenders (4)', 220),
+      item('seed-hashbrown', 'Hash browns (2)', 130),
+      item('seed-rosemary', 'Rosemary sauce (2 tbsp)', 40),
+      item('seed-veg', 'Frozen mixed veg', 150)
+    ] });
+    setFavs(favs);
+  }
+  const s = getSettings();
+  s.seeded1027 = true;
+  localStorage.setItem(SKEY, JSON.stringify(s));
+  renderFavRow();
+}
+
 /* ================= Garmin ================= */
 const GARMIN_SKIP = 'ml.garminSkip';
 const GARMIN_EVERY = 10 * 60 * 1000;
@@ -3196,7 +3266,7 @@ renderDay();
 /* Strava has been replaced by Garmin; tidy away its old local state. */
 (function(){ const s = getSettings(); if (s.strava || s.stravaChecked) { delete s.strava; delete s.stravaChecked;
   localStorage.setItem(SKEY, JSON.stringify(s)); } })();
-if (syncReady()) doPull().then(() => garminSync(false));
+if (syncReady()) doPull().then(() => { seedJoel(); garminSync(false); });
 else if (!getSettings().skipAuth) openAuth();
 </script>
 </body>
