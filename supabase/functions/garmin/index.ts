@@ -101,9 +101,9 @@ function pickNum(f: Record<string, unknown>, re: RegExp) {
 function dayCalories(d: any) {
   const f = flat(d);
   const date = String(d.calendarDate ?? d.date ?? d.summaryDate ?? f['calendarDate'] ?? '').slice(0, 10);
-  const active = pickNum(f, /activekilocalories|activecalories/);
-  const bmr = pickNum(f, /bmrkilocalories|bmrcalories|restingcalories/);
-  const total = pickNum(f, /totalkilocalories|totalcalories/) || (active + bmr);
+  const active = pickNum(f, /activekilocalories|activecalories|burnedactive/);
+  const bmr = pickNum(f, /bmrkilocalories|bmrcalories|restingcalories|burnedresting/);
+  const total = pickNum(f, /totalkilocalories|totalcalories|burnedtotal/) || (active + bmr);
   return { date, total, active, bmr };
 }
 // Garmin's whole-day burn (resting + steps + workouts) for each day in range.

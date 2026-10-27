@@ -101,13 +101,13 @@ textarea{width:100%; resize:vertical;}
 .goal-lbl{font-family:var(--mono); font-size:11px; letter-spacing:.1em; color:var(--ash);
   margin-top:7px; text-transform:uppercase;}
 .goal-lbl .over{color:var(--danger);}
-.goal-lbl b{color:var(--text); font-weight:600;}
+.goal-lbl b{color:var(--porcelain); font-weight:600;}
 .goal-lbl .zone{color:var(--flame);}
 .zones{margin:10px auto 0; max-width:380px; font-family:var(--mono); font-size:11.5px; color:var(--ash); text-align:left;}
 .zn{display:grid; grid-template-columns:1fr 50px 76px 84px; gap:6px; padding:5px 10px; border-radius:8px; align-items:baseline;}
-.zn b{color:var(--text); font-weight:600; text-align:right;}
+.zn b{color:var(--porcelain); font-weight:600; text-align:right;}
 .zn .rt, .zn .lf{text-align:right;}
-.zn.on{background:rgba(var(--ink),.07); color:var(--text);}
+.zn.on{background:rgba(var(--ink),.07); color:var(--porcelain);}
 .zn.on .nm::before{content:'\25B8  '; color:var(--flame);}
 .zn .over{color:var(--danger);}
 .fav-lbl{font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--ash);
@@ -131,8 +131,18 @@ textarea{width:100%; resize:vertical;}
 
 /* ---------- dashboard: 7-day strip ---------- */
 .week{display:block; width:100%; margin-top:10px; background:var(--iron2);
-  border:1px solid var(--line); border-radius:14px; padding:11px 12px 8px; text-align:left;}
-.week:active{background:rgba(var(--ink),.05);}
+  border:1px solid var(--line); border-radius:14px; padding:11px 12px 10px; text-align:left;}
+.wk-trends{font-family:var(--mono); font-size:9.5px; font-weight:600; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--ash); background:none; border:none; padding:0;}
+.wk-chart{display:block; width:100%; height:auto; margin-top:6px; touch-action:manipulation;}
+.wk-chart .hit{cursor:pointer;}
+.wk-legend{display:flex; flex-wrap:wrap; gap:4px 12px; font-family:var(--mono); font-size:9.5px; color:var(--ash); margin-top:2px;}
+.wk-legend i{display:inline-block; vertical-align:middle; margin-right:5px;}
+.wk-legend .k-eat{width:8px; height:10px; border-radius:2px 2px 0 0; background:var(--flame);}
+.wk-legend .k-burn{width:12px; height:2px; background:var(--porcelain);}
+.wk-legend .k-zone{width:12px; height:10px; background:var(--flame); opacity:.18; border-radius:2px;}
+.wk-sum{font-family:var(--mono); font-size:10.5px; color:var(--ash); margin-top:8px; line-height:1.55;}
+.wk-sum b{color:var(--porcelain); font-weight:600;}
 .wk-head{display:flex; justify-content:space-between; font-family:var(--mono); font-size:9.5px;
   font-weight:600; letter-spacing:.14em; text-transform:uppercase; color:var(--ash);}
 .wk-bars{position:relative; display:flex; gap:6px; margin-top:9px;}
@@ -434,10 +444,12 @@ select{-webkit-appearance:none; appearance:none;
       <div class="mt-sub" id="tsF">0% kcal</div>
     </div>
   </div>
-  <button class="week" id="weekPanel" aria-label="Open trends">
-    <div class="wk-head"><span id="wkLbl">Last 7 days</span><span id="wkAvg"></span></div>
-    <div class="wk-bars" id="wkBars"></div>
-  </button>
+  <div class="week" id="weekPanel">
+    <div class="wk-head"><span id="wkLbl">Last 7 days</span><button class="wk-trends" id="wkTrends">Trends &rsaquo;</button></div>
+    <svg class="wk-chart" id="wkChart" viewBox="0 0 340 146" role="img" aria-label="Calories eaten and burned, last 7 days"></svg>
+    <div class="wk-legend"><span><i class="k-eat"></i>eaten</span><span><i class="k-burn"></i>burned</span><span><i class="k-zone"></i>500-1,000 under</span></div>
+    <div class="wk-sum" id="wkSum"></div>
+  </div>
   <div class="chips" id="chipLine"></div>
 </section>
 
@@ -877,9 +889,9 @@ function tc(){
   const light = document.documentElement.dataset.theme !== 'dark';
   return light
     ? { ink:'38,36,32',    text:'#262420', ash:'#8A8476', flame:'#E07B00',
-        goalDash:'rgba(138,132,118,.7)', flameBar:'rgba(224,123,0,.5)' }
+        goalDash:'rgba(138,132,118,.7)', flameBar:'rgba(224,123,0,.5)', flameSoft:'#EDB878' }
     : { ink:'242,239,233', text:'#F2EFE9', ash:'#8E897D', flame:'#FFA53D',
-        goalDash:'rgba(142,137,125,.6)', flameBar:'rgba(255,165,61,.45)' };
+        goalDash:'rgba(142,137,125,.6)', flameBar:'rgba(255,165,61,.45)', flameSoft:'#9C6630' };
 }
 
 let toastT = null;
@@ -1286,29 +1298,10 @@ function renderDash(st, log, tot, burned){
   $('#tsF').textContent = pct(fk) + '% kcal';
 
   const days = lastNDaysEnding(viewDate, 7);
-  const vals = days.map(d => r0(dayTotals(log, d).kcal));
-  const goal = goalFor(st);
-  let mx = Math.max(1, goal);
-  vals.forEach(v => { if (v > mx) mx = v; });
   $('#wkLbl').textContent = viewDate === todayISO() ? 'Last 7 days'
     : '7 days to ' + new Date(viewDate + 'T12:00:00')
         .toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
-  const logged = days.filter(d => (log[d] || []).length);
-  const avg = logged.length
-    ? logged.reduce((a, d) => a + dayTotals(log, d).kcal, 0) / logged.length : 0;
-  $('#wkAvg').textContent = logged.length ? 'avg ' + nf.format(r0(avg)) : 'no logs';
-  let bars = '';
-  days.forEach((d, i) => {
-    const h = vals[i] > 0 ? Math.max(3, Math.round(34 * vals[i] / mx)) : 2;
-    const lb = new Date(d + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'narrow' });
-    bars += '<div class="wk-col"><div class="wk-slot"><div class="wk-bar' +
-      (d === viewDate ? ' today' : '') + '" style="height:' + h + 'px"></div></div>' +
-      '<div class="wk-day">' + lb + '</div></div>';
-  });
-  if (goal > 0) {
-    bars += '<div class="wk-goal" style="bottom:' + (14 + Math.round(34 * goal / mx)) + 'px"></div>';
-  }
-  $('#wkBars').innerHTML = bars;
+  renderWeekChart(st, log, days);
 
   const sk = streakDays(log);
   let chips = 'streak <b>' + sk + ' day' + (sk === 1 ? '' : 's') + '</b>';
@@ -1324,6 +1317,82 @@ function renderDash(st, log, tot, burned){
     }
   }
   $('#chipLine').innerHTML = chips;
+}
+
+/* Last 7 days: a column for what you ate, a line for what you burned, and a
+   shaded band for the 500-1000 under zone. Tap a day to open it. */
+function renderWeekChart(st, log, days){
+  const c = tc();
+  const exlog = getEx();
+  const aim = deficitAim(st);
+  const floor = st.sex === 'f' ? 1200 : 1500;
+  const rows = days.map(d => {
+    const eaten = dayTotals(log, d).kcal;
+    const burn = dayBurnInfo(st, d, dayBurn(exlog, d)).burn;
+    return { d: d, eaten: eaten, logged: (log[d] || []).length > 0, burn: burn,
+             zLo: burn ? Math.max(floor, burn - aim.max) : 0, zHi: burn ? burn - aim.min : 0 };
+  });
+  const L = 30, R = 336, T = 8, B = 120;
+  let top = 1000;
+  rows.forEach(r => { top = Math.max(top, r.eaten, r.burn); });
+  top = Math.ceil(top / 1000) * 1000;
+  const y = v => B - (v / top) * (B - T);
+  const slot = (R - L) / 7;
+  let svg = '';
+  for (let v = 1000; v <= top; v += 1000) {
+    svg += '<line x1="' + L + '" x2="' + R + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) +
+      '" stroke="rgba(' + c.ink + ',.09)" stroke-width="1"/>' +
+      '<text x="' + (L - 6) + '" y="' + (y(v) + 3).toFixed(1) + '" text-anchor="end" font-size="8.5" fill="' + c.ash +
+      '" font-family="IBM Plex Mono, monospace">' + (v / 1000) + 'K</text>';
+  }
+  svg += '<line x1="' + L + '" x2="' + R + '" y1="' + B + '" y2="' + B + '" stroke="rgba(' + c.ink + ',.18)" stroke-width="1"/>';
+  rows.forEach((r, i) => {
+    const cx = L + slot * i + slot / 2;
+    const sel = r.d === viewDate;
+    if (r.burn) {
+      const zw = 30;
+      svg += '<rect x="' + (cx - zw / 2).toFixed(1) + '" y="' + y(r.zHi).toFixed(1) + '" width="' + zw +
+        '" height="' + Math.max(1, y(r.zLo) - y(r.zHi)).toFixed(1) + '" rx="3" fill="' + c.flame + '" fill-opacity=".16"/>';
+    }
+    if (r.logged && r.eaten > 0) {
+      const w = 16, x0 = cx - w / 2, yt = y(r.eaten), h = B - yt, rr = Math.min(4, h);
+      svg += '<path d="M' + x0.toFixed(1) + ' ' + B + 'V' + (yt + rr).toFixed(1) +
+        'Q' + x0.toFixed(1) + ' ' + yt.toFixed(1) + ' ' + (x0 + rr).toFixed(1) + ' ' + yt.toFixed(1) +
+        'H' + (x0 + w - rr).toFixed(1) + 'Q' + (x0 + w).toFixed(1) + ' ' + yt.toFixed(1) + ' ' + (x0 + w).toFixed(1) + ' ' + (yt + rr).toFixed(1) +
+        'V' + B + 'Z" fill="' + (sel ? c.flame : c.flameSoft) + '"/>';
+    }
+    if (r.burn) {
+      svg += '<line x1="' + (cx - 15).toFixed(1) + '" x2="' + (cx + 15).toFixed(1) + '" y1="' + y(r.burn).toFixed(1) +
+        '" y2="' + y(r.burn).toFixed(1) + '" stroke="' + c.text + '" stroke-width="2" stroke-linecap="round"/>';
+    }
+    const lb = new Date(r.d + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'narrow' });
+    svg += '<text x="' + cx.toFixed(1) + '" y="136" text-anchor="middle" font-size="9" font-family="IBM Plex Mono, monospace" fill="' +
+      (sel ? c.text : c.ash) + '"' + (sel ? ' font-weight="600"' : '') + '>' + lb + '</text>';
+    if (sel) svg += '<rect x="' + (cx - 8).toFixed(1) + '" y="141" width="16" height="2" rx="1" fill="' + c.flame + '"/>';
+    svg += '<rect class="hit" data-day="' + r.d + '" x="' + (L + slot * i).toFixed(1) + '" y="0" width="' + slot.toFixed(1) +
+      '" height="146" fill="transparent"><title>' + esc(dateLabel(r.d)) + ': ate ' + nf.format(r0(r.eaten)) +
+      (r.burn ? ', burned ' + nf.format(r0(r.burn)) : '') + '</title></rect>';
+  });
+  $('#wkChart').innerHTML = svg;
+
+  /* Selected day, then the average over full logged days (today is still in progress). */
+  const cur = rows.find(r => r.d === viewDate);
+  let sum = '';
+  if (cur && cur.burn) {
+    const u = cur.burn - cur.eaten;
+    sum += esc(dateLabel(cur.d)) + ': ate <b>' + nf.format(r0(cur.eaten)) + '</b> &middot; burned <b>' +
+      nf.format(r0(cur.burn)) + '</b> &middot; ' + (u >= 0 ? nf.format(r0(u)) + ' under' : nf.format(r0(-u)) + ' over');
+  }
+  const full = rows.filter(r => r.logged && r.burn && r.d !== todayISO());
+  if (full.length) {
+    const avgU = full.reduce((a, r) => a + (r.burn - r.eaten), 0) / full.length;
+    const avgE = full.reduce((a, r) => a + r.eaten, 0) / full.length;
+    const kg = avgU * 7 / 7700;
+    sum += (sum ? '<br>' : '') + 'Avg of ' + full.length + ' full day' + (full.length === 1 ? '' : 's') + ': ate <b>' +
+      nf.format(r0(avgE)) + '</b> &middot; ' + (avgU >= 0 ? nf.format(r0(avgU)) + ' under' : nf.format(r0(-avgU)) + ' over') +
+      ' &middot; <b>' + (kg >= 0 ? '&minus;' : '+') + r1(Math.abs(kg)) + ' kg/wk</b> pace';
+  }
+  $('#wkSum').innerHTML = sum || 'Log a few days to see your pace.';
 }
 
 /* ================= favourites ================= */
@@ -1351,10 +1420,10 @@ function logFav(fid){
     favId: fav.id, confidence: '', assumptions: [],
     items: JSON.parse(JSON.stringify(fav.items))
   };
-  (log[todayISO()] = log[todayISO()] || []).push(entry);
+  (log[viewDate] = log[viewDate] || []).push(entry);
   setLog(log);
-  if (viewDate === todayISO()) renderDay();
-  toast('Logged ' + fav.name);
+  renderDay();
+  toast('Logged ' + fav.name + (viewDate === todayISO() ? '' : ' to ' + dateLabel(viewDate)));
 }
 $('#favRow').addEventListener('click', e => {
   const chip = e.target.closest('.fav-chip');
@@ -2485,7 +2554,13 @@ function renderTrends(){
 function openTrends(){ $('#trSheet').classList.add('open'); renderTrends(); renderCompetition(); }
 function closeTrends(){ $('#trSheet').classList.remove('open'); }
 $('#trendBtn').addEventListener('click', openTrends);
-$('#weekPanel').addEventListener('click', openTrends);
+$('#wkTrends').addEventListener('click', openTrends);
+$('#wkChart').addEventListener('click', e => {
+  const hit = e.target.closest('[data-day]');
+  if (!hit) return;
+  viewDate = hit.dataset.day;
+  renderDay();
+});
 $('#trClose').addEventListener('click', closeTrends);
 $('#r7').addEventListener('click', () => { trRange = 7;
   $('#r7').classList.add('on'); $('#r30').classList.remove('on'); renderTrends(); });
@@ -3306,7 +3381,12 @@ renderDay();
 /* Strava has been replaced by Garmin; tidy away its old local state. */
 (function(){ const s = getSettings(); if (s.strava || s.stravaChecked) { delete s.strava; delete s.stravaChecked;
   localStorage.setItem(SKEY, JSON.stringify(s)); } })();
-if (syncReady()) doPull().then(() => { seedJoel(); garminSync(false); });
+if (syncReady()) doPull().then(() => {
+  seedJoel();
+  /* Always check Garmin when the app opens; the 5 minute limit is for while it stays open. */
+  const s = getSettings(); delete s.garminChecked; localStorage.setItem(SKEY, JSON.stringify(s));
+  garminSync(false);
+});
 else if (!getSettings().skipAuth) openAuth();
 </script>
 </body>
