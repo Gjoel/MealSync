@@ -2939,7 +2939,9 @@ async function renderCompetition(){
 /* ================= one-off: Joel's foods and regular meal (27 Oct 2026) ================= */
 function seedJoel(){
   const st = getSettings();
-  if (st.syncHandle !== 'joel' || st.seeded1027) return;
+  if (st.syncHandle !== 'joel') return;
+  seedJoelShake();
+  if (st.seeded1027) return;
   const foods = getFoods();
   const upsert = f => {
     const i = foods.findIndex(x => x.id === f.id);
@@ -2977,6 +2979,46 @@ function seedJoel(){
   }
   const s = getSettings();
   s.seeded1027 = true;
+  localStorage.setItem(SKEY, JSON.stringify(s));
+  renderFavRow();
+}
+
+/* One-off: protein shake (28 Oct 2026). Musashi P30 vanilla: 773 kJ, 30.5 g protein per
+   45 g scoop (Coles), fat 3.0 g, carbs 7.3 g (Musashi). Coles skim: 35 kcal, 3.6 g protein,
+   0.1 g fat, 4.8 g carbs per 100 mL. */
+function seedJoelShake(){
+  const st = getSettings();
+  if (st.seeded1028) return;
+  const foods = getFoods();
+  const upsert = f => {
+    const i = foods.findIndex(x => x.id === f.id);
+    if (i >= 0) foods[i] = Object.assign({}, foods[i], f); else foods.push(f);
+  };
+  const powder = { id: 'seed-p30', name: 'Musashi P30 protein powder, vanilla', serving_g: 45, serving_label: 'scoop',
+    per100: { kcal: 411, p: 67.8, c: 16.2, f: 6.7 } };
+  const milk = { id: 'seed-skim', name: 'Coles skim milk', serving_g: 300, serving_label: 'glass (300 mL)',
+    per100: { kcal: 35, p: 3.6, c: 4.8, f: 0.1 } };
+  /* The usual shake as one food: 1 scoop plus 300 mL skim, 345 g in all. */
+  const shake = { id: 'seed-shake', name: 'Protein shake (P30 + 300 mL skim)', serving_g: 345, serving_label: 'shake',
+    per100: { kcal: 84, p: 12, c: 6.3, f: 1 }, lastUsed: Date.now() };
+  [powder, milk, shake].forEach(upsert);
+  setFoods(foods);
+
+  const favs = getFavs();
+  if (!favs.some(f => f.id === 'seed-shake-fav')) {
+    const item = (f, name, g) => {
+      const k = g / 100;
+      return { name: name, grams: g, kcal: r0(f.per100.kcal * k), p: r1(f.per100.p * k),
+               c: r1(f.per100.c * k), f: r1(f.per100.f * k), note: '' };
+    };
+    favs.unshift({ id: 'seed-shake-fav', name: 'Protein shake', thumb: '', items: [
+      item(powder, 'Musashi P30 (1 scoop)', 45),
+      item(milk, 'Skim milk (300 mL)', 300)
+    ] });
+    setFavs(favs);
+  }
+  const s = getSettings();
+  s.seeded1028 = true;
   localStorage.setItem(SKEY, JSON.stringify(s));
   renderFavRow();
 }
