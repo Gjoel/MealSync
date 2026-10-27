@@ -960,9 +960,10 @@ Method:
 7. Use standard food composition data (AFCD or USDA) for energy and macros. Keep kcal consistent with the macros (about 4 kcal/g protein, 4 kcal/g carbohydrate, 9 kcal/g fat, 7 kcal/g alcohol).
 8. Give a decisive best estimate rather than a wide hedge, and state your key assumptions.
 9. If the user supplies a correction or extra detail, treat it as ground truth and re-estimate everything consistently with it.
+10. Give the meal a short, natural name for what was actually eaten, the way a person would say it, e.g. "Pepperoni pizza", "Chicken & chipotle sandwich", "Vegemite toast", "Beef taco cups". Never a time-of-day word like Breakfast, Lunch, Dinner or Snack.
 
 Respond with ONLY a single JSON object. No markdown, no code fences, no commentary. Exactly this shape:
-{"items":[{"name":"...","grams":0,"kcal":0,"protein_g":0,"carbs_g":0,"fat_g":0,"note":"one short assumption for this item, or empty string"}],"confidence":"high|medium|low","assumptions":["..."],"question":"the single short question that would most improve accuracy, or empty string"}`;
+{"meal_name":"short name of the dish","items":[{"name":"...","grams":0,"kcal":0,"protein_g":0,"carbs_g":0,"fat_g":0,"note":"one short assumption for this item, or empty string"}],"confidence":"high|medium|low","assumptions":["..."],"question":"the single short question that would most improve accuracy, or empty string"}`;
 
 const EXSYS = `You turn exercise descriptions or pasted fitness app summaries (Strava, Garmin, Apple Watch and similar) into structured activities.
 
@@ -1000,8 +1001,9 @@ const LABEL_SCHEMA = {
 };
 const MEAL_SCHEMA = {
   type: 'object', additionalProperties: false,
-  required: ['items', 'confidence', 'assumptions', 'question'],
+  required: ['meal_name', 'items', 'confidence', 'assumptions', 'question'],
   properties: {
+    meal_name: { type: 'string' },
     items: { type: 'array', items: {
       type: 'object', additionalProperties: false,
       required: ['name', 'grams', 'kcal', 'protein_g', 'carbs_g', 'fat_g', 'note'],
@@ -1156,6 +1158,7 @@ async function callClaude(userText){
   });
   if (!items.length) throw new Error('No food was identified. Try a clearer photo or add more detail.');
   return {
+    mealName: String(j.meal_name || '').trim().slice(0, 60),
     items: items,
     confidence: String(j.confidence || ''),
     assumptions: Array.isArray(j.assumptions) ? j.assumptions.map(String) : [],
@@ -1833,6 +1836,7 @@ $('#foodAdd').addEventListener('click', () => {
   const foods = getFoods();
   const ff = foods.find(x => x.id === f.id);
   if (ff) { ff.lastUsed = Date.now(); setFoods(foods); }
+  autoRename();
   renderItems();
   renderFoodSel('');
   toast('Added ' + f.name);
@@ -2001,6 +2005,7 @@ $('#prodList').addEventListener('click', e => {
     kcal: p.nut.kcal, p: p.nut.p, c: p.nut.c, f: p.nut.f, note: 'per 100 g, from Open Food Facts',
     basis: { kcal: p.nut.kcal / 100, p: p.nut.p / 100, c: p.nut.c / 100, f: p.nut.f / 100 }
   });
+  autoRename();
   renderItems();
   toast('Added. Set the grams you ate.');
 });
@@ -2009,13 +2014,30 @@ $('#prodList').addEventListener('click', e => {
 function freshSession(){
   return {
     mode: 'new', id: uid(), date: viewDate, origDate: viewDate,
-    name: defaultName(), time: nowHM(),
+    name: defaultName(), nameAuto: true, time: nowHM(),
     imgs: [], desc: '', previewURL: '', thumb: '', favId: '',
     items: [], assumptions: [], confidence: '', question: ''
   };
 }
+/* A name from what is in the meal, e.g. "Chicken tenders & Hash brown +2". */
+function autoMealName(items){
+  const names = items.map(i => String(i.name || '').replace(/\s*\(.*?\)\s*/g, ' ').trim()).filter(Boolean);
+  if (!names.length) return '';
+  if (names.length === 1) return names[0];
+  return names[0] + ' & ' + names[1] + (names.length > 2 ? ' +' + (names.length - 2) : '');
+}
+/* Rename the meal after its food, unless the user has typed their own name. */
+function autoRename(preferred){
+  if (!session || !session.nameAuto) return;
+  const n = (preferred || autoMealName(session.items)).slice(0, 60);
+  if (!n) return;
+  session.name = n;
+  $('#mName').value = n;
+}
+$('#mName').addEventListener('input', () => { if (session) session.nameAuto = false; });
 function applyEstimate(est){
   session.items = est.items;
+  autoRename(est.mealName);
   session.assumptions = est.assumptions;
   session.confidence = est.confidence;
   session.question = est.question;
@@ -2056,6 +2078,7 @@ $('#copyLastBtn').addEventListener('click', () => {
   const m = lastMeal();
   if (!m) return;
   session.name = m.name;
+  session.nameAuto = false;
   session.thumb = m.thumb || '';
   session.previewURL = '';
   session.favId = m.favId || '';
@@ -2198,6 +2221,9 @@ $('#refineBtn').addEventListener('click', async () => {
 $('#saveMeal').addEventListener('click', () => {
   if (!session || !session.items.length) { showSheetError('Add at least one item before logging.'); return; }
   session.name = $('#mName').value.trim() || session.name || 'Meal';
+  if (session.nameAuto && /^(breakfast|lunch|dinner|snack|meal)$/i.test(session.name)) {
+    session.name = autoMealName(session.items) || session.name;
+  }
   session.time = $('#mTime').value || session.time || nowHM();
   const dk = $('#mDate').value || session.date;
   const log = getLog();
@@ -3410,8 +3436,7 @@ $('#wipeBtn').addEventListener('click', () => {
 });
 
 /* close sheets when tapping the dimmed backdrop */
-$('#sheet').addEventListener('click', e => { if (e.target === e.currentTarget) closeSheet(); });
-$('#exSheet').addEventListener('click', e => { if (e.target === e.currentTarget) closeExercise(); });
+/* The meal and exercise sheets only close with their X, so a stray tap never loses an entry. */
 $('#trSheet').addEventListener('click', e => { if (e.target === e.currentTarget) closeTrends(); });
 $('#profSheet').addEventListener('click', e => { if (e.target === e.currentTarget) closeProfile(); });
 $('#setSheet').addEventListener('click', e => { if (e.target === e.currentTarget) closeSettings(); });
