@@ -1206,6 +1206,27 @@ function maintenanceKcal(st){
   if (!st.sex || !(age > 0) || !(ht > 0) || !(w > 0) || !ACTIVITY[st.activity]) return 0;
   return Math.round((10 * w + 6.25 * ht - 5 * age + (st.sex === 'm' ? 5 : -161)) * ACTIVITY[st.activity]);
 }
+const GDKEY = 'ml.garminDays';
+function getGarminDays(){ try { return JSON.parse(localStorage.getItem(GDKEY)) || {}; } catch(e){ return {}; } }
+/* The day's total burn. Uses Garmin's whole-day figure (resting + steps + workouts)
+   when synced, otherwise the profile estimate plus logged exercise. */
+function dayBurnInfo(st, iso, exBurned){
+  const maint = maintenanceKcal(st);
+  const est = maint ? maint + exBurned : 0;
+  const gd = getGarminDays();
+  const g = gd[iso];
+  if (!g || !(g.total > 0)) return { burn: est, maint: maint, src: 'est' };
+  if (iso !== todayISO()) return { burn: g.total, so_far: g.total, maint: maint, src: 'garmin' };
+  /* Today Garmin's number is a running total, so add the resting burn still to come. */
+  const now = new Date();
+  const frac = (now.getHours() * 60 + now.getMinutes()) / 1440;
+  const yd = gd[isoDaysAgo(1)];
+  const bmrDay = (yd && yd.bmr) || (maint ? maint / ACTIVITY[st.activity] : 0);
+  let burn = g.total;
+  const fullDayIncluded = g.bmr && bmrDay && g.bmr >= bmrDay * 0.9 && frac < 0.8;
+  if (bmrDay && !fullDayIncluded) burn = g.total + bmrDay * (1 - frac);
+  return { burn: Math.round(burn), so_far: g.total, maint: maint, src: 'garmin' };
+}
 function deficitAim(st){
   const lo = Number(st.defMin) > 0 ? Number(st.defMin) : 500;
   const hi = Number(st.defMax) > 0 ? Number(st.defMax) : 1000;
@@ -1403,13 +1424,14 @@ function renderDay(){
   $('#dayKcal').textContent = nf.format(r0(tot.kcal));
 
   const goal = Number(st.goal) || 0;
-  const maint = maintenanceKcal(st);
+  const info = dayBurnInfo(st, viewDate, burned);
+  const maint = info.maint;
   const gw = $('#goalWrap');
-  if (maint > 0) {
+  if (info.burn > 0) {
     /* Deficit mode: total burned today, then a 500-1000 under target band. */
     gw.hidden = false;
     const aim = deficitAim(st);
-    const burn = maint + burned;
+    const burn = info.burn;
     const hi = burn - aim.min;
     const lo = Math.max(st.sex === 'f' ? 1200 : 1500, burn - aim.max);
     const eaten = tot.kcal, under = burn - eaten;
@@ -1417,9 +1439,17 @@ function renderDay(){
     let ticks = '';
     for (let i = 0; i < T; i++) ticks += '<i class="' + (i < on ? 'on' : '') + '"></i>';
     $('#ticks').innerHTML = ticks;
-    $('#goalLbl').innerHTML = 'burned <b>' + nf.format(r0(burn)) + '</b>' +
-      (burned > 0 ? ' (' + nf.format(maint) + ' body + ' + nf.format(r0(burned)) + ' exercise)' : '') +
-      ' &middot; ' + (under >= 0 ? nf.format(r0(under)) + ' under' : '<span class="over">' + nf.format(r0(-under)) + ' over</span>');
+    let burnTxt;
+    if (info.src === 'garmin' && viewDate === todayISO()) {
+      burnTxt = 'Garmin <b>' + nf.format(r0(info.so_far)) + '</b> burned so far &middot; about <b>' +
+        nf.format(r0(burn)) + '</b> by midnight';
+    } else if (info.src === 'garmin') {
+      burnTxt = 'Garmin burned <b>' + nf.format(r0(burn)) + '</b>';
+    } else {
+      burnTxt = 'burned <b>' + nf.format(r0(burn)) + '</b>' +
+        (burned > 0 ? ' (' + nf.format(maint) + ' body + ' + nf.format(r0(burned)) + ' exercise)' : '');
+    }
+    $('#goalLbl').innerHTML = burnTxt + '<br>' + (under >= 0 ? nf.format(r0(under)) + ' under' : '<span class="over">' + nf.format(r0(-under)) + ' over</span>');
     /* One line per goal; targets move with the day's exercise. The highlighted
        line is the most ambitious goal you are still on track for. */
     const zones = [
@@ -2878,7 +2908,7 @@ function seedJoel(){
 
 /* ================= Garmin ================= */
 const GARMIN_SKIP = 'ml.garminSkip';
-const GARMIN_EVERY = 10 * 60 * 1000;
+const GARMIN_EVERY = 5 * 60 * 1000;
 /* Rough MET values for when Garmin has no calorie figure. */
 const MET = {
   running: 9.8, trail_running: 9.5, treadmill_running: 9.8, track_running: 10, cycling: 7.5,
@@ -2990,6 +3020,14 @@ async function garminSync(force){
     localStorage.setItem(SKEY, JSON.stringify(s));
     if (r.error) toast(r.error);
     if (!r.connected) return;
+    if (Array.isArray(r.days) && r.days.length) {
+      const gd = getGarminDays();
+      r.days.forEach(d => { if (d && d.date && d.total > 0) gd[d.date] = { total: d.total, active: d.active || 0, bmr: d.bmr || 0 }; });
+      /* Keep about two months. */
+      Object.keys(gd).sort().slice(0, -60).forEach(k => delete gd[k]);
+      localStorage.setItem(GDKEY, JSON.stringify(gd));
+      renderDay();
+    }
 
     /* Only bring in activities from the day you connected onwards, so
        anything you already logged by hand is not doubled up. */
@@ -3140,6 +3178,7 @@ $('#authAction').addEventListener('click', async () => {
     ['goal','pgoal','defMin','defMax','sex','age','heightCm','weightKg','activity','targetW','targetDate',
      'syncHandle','syncPass','syncLast','skipAuth','strava','stravaChecked','garmin','garminChecked'].forEach(k => delete s[k]);
     localStorage.removeItem(GARMIN_SKIP);
+    localStorage.removeItem(GDKEY);
     localStorage.removeItem('ml.stravaSkip');
     localStorage.setItem(SKEY, JSON.stringify(s));
     renderFavRow();
@@ -3243,6 +3282,7 @@ $('#wipeBtn').addEventListener('click', () => {
   localStorage.removeItem(FKEY);
   localStorage.removeItem(EKEY);
   localStorage.removeItem(GARMIN_SKIP);
+  localStorage.removeItem(GDKEY);
   localStorage.removeItem('ml.stravaSkip');
   localStorage.removeItem(DKEY);
   closeSettings();

@@ -78,6 +78,58 @@ async function garminGet(token: string, path: string) {
   return text ? JSON.parse(text) : null;
 }
 
+// Flatten nested objects so calorie fields can be found whatever the nesting.
+// deno-lint-ignore no-explicit-any
+function flat(o: any, pre = '', out: Record<string, unknown> = {}, depth = 0) {
+  if (!o || typeof o !== 'object' || depth > 3) return out;
+  for (const [k, v] of Object.entries(o)) {
+    const key = pre ? pre + '.' + k : k;
+    if (v && typeof v === 'object' && !Array.isArray(v)) flat(v, key, out, depth + 1);
+    else out[key] = v;
+  }
+  return out;
+}
+function pickNum(f: Record<string, unknown>, re: RegExp) {
+  for (const [k, v] of Object.entries(f)) {
+    const lk = k.toLowerCase();
+    if (/goal|remaining|consumed|net/.test(lk)) continue;
+    if (re.test(lk) && typeof v === 'number' && v > 0) return Math.round(v);
+  }
+  return 0;
+}
+// deno-lint-ignore no-explicit-any
+function dayCalories(d: any) {
+  const f = flat(d);
+  const date = String(d.calendarDate ?? d.date ?? d.summaryDate ?? f['calendarDate'] ?? '').slice(0, 10);
+  const active = pickNum(f, /activekilocalories|activecalories/);
+  const bmr = pickNum(f, /bmrkilocalories|bmrcalories|restingcalories/);
+  const total = pickNum(f, /totalkilocalories|totalcalories/) || (active + bmr);
+  return { date, total, active, bmr };
+}
+// Garmin's whole-day burn (resting + steps + workouts) for each day in range.
+async function dailyTotals(token: string, start: string, end: string) {
+  try {
+    const raw = await garminGet(token, '/usersummary-service/v2/dailysummaries?startDate=' + start + '&endDate=' + end);
+    // deno-lint-ignore no-explicit-any
+    const list: any[] = Array.isArray(raw) ? raw : (raw && (raw.data || raw.dailySummaries)) || [];
+    console.log('garmin daily', list.length, 'keys:', Object.keys(flat(list[list.length - 1] || {})).slice(0, 60).join(','));
+    const days = list.map(dayCalories).filter((d) => /^\d{4}-\d\d-\d\d$/.test(d.date) && d.total > 0);
+    if (days.length) return days;
+  } catch (e) {
+    console.log('garmin daily v2 failed', (e as Error).message);
+  }
+  try {
+    const one = await garminGet(token, '/usersummary-service/usersummary/daily?calendarDate=' + end);
+    console.log('garmin daily single keys:', Object.keys(flat(one || {})).slice(0, 60).join(','));
+    const d = dayCalories(one || {});
+    if (!d.date) d.date = end;
+    return d.total > 0 ? [d] : [];
+  } catch (e) {
+    console.log('garmin daily single failed', (e as Error).message);
+    return [];
+  }
+}
+
 const isoDate = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d\d-\d\d$/.test(v)) ? v : '';
 
 Deno.serve(async (req) => {
@@ -183,8 +235,9 @@ Deno.serve(async (req) => {
           calories,
         });
       }
+      const days = await dailyTotals(token, start, end);
       const since = Math.floor(Date.parse(row.connected_at) / 1000) || 0;
-      return json({ connected: true, since, activities: out });
+      return json({ connected: true, since, activities: out, days });
     }
 
     return json({ error: 'Unknown action' }, 400);
