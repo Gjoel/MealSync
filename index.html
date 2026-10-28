@@ -481,8 +481,8 @@ select{-webkit-appearance:none; appearance:none;
 </div>
 
 <input type="file" id="camIn" accept="image/*" capture="environment" hidden>
-<input type="file" id="libIn" accept="image/*" hidden>
-<input type="file" id="morIn" accept="image/*" hidden>
+<input type="file" id="libIn" accept="image/*" multiple hidden>
+<input type="file" id="morIn" accept="image/*" multiple hidden>
 <input type="file" id="lblIn" accept="image/*" capture="environment" hidden>
 
 <div id="toast" class="toast" role="status"></div>
@@ -928,6 +928,15 @@ function setFavs(f){ localStorage.setItem(FKEY, JSON.stringify(f)); pushSoon(); 
 function getEx(){ try { return JSON.parse(localStorage.getItem(EKEY)) || {}; } catch(e){ return {}; } }
 function setEx(x){ localStorage.setItem(EKEY, JSON.stringify(x)); pushSoon(); }
 const DKEY = 'ml.foods';
+/* Ids of deleted meals, exercise, favourites and foods, so a merge never brings them back. */
+const XKEY = 'ml.deleted';
+function getDeleted(){ try { return JSON.parse(localStorage.getItem(XKEY)) || {}; } catch(e){ return {}; } }
+function markDeleted(id){
+  if (!id) return;
+  const d = getDeleted();
+  d[id] = Date.now();
+  localStorage.setItem(XKEY, JSON.stringify(d));
+}
 function getFoods(){ try { return JSON.parse(localStorage.getItem(DKEY)) || []; } catch(e){ return []; } }
 function setFoods(f){ localStorage.setItem(DKEY, JSON.stringify(f)); pushSoon(); }
 
@@ -1529,7 +1538,7 @@ function logFav(fid){
   if (!fav) return;
   const log = getLog();
   const entry = {
-    id: uid(), name: fav.name, time: nowHM(), thumb: fav.thumb || '',
+    id: uid(), u: Date.now(), name: fav.name, time: nowHM(), thumb: fav.thumb || '',
     favId: fav.id, confidence: '', assumptions: [],
     items: JSON.parse(JSON.stringify(fav.items))
   };
@@ -1547,6 +1556,7 @@ function toggleFav(){
   const favs = getFavs();
   const existing = session.favId ? favs.find(f => f.id === session.favId) : null;
   if (existing) {
+    markDeleted(session.favId);
     setFavs(favs.filter(f => f.id !== session.favId));
     session.favId = '';
     $('#favBtn').classList.remove('on');
@@ -1562,6 +1572,7 @@ function toggleFav(){
         p: r1(i.p), c: r1(i.c), f: r1(i.f), note: i.note || ''
       }))
     };
+    fav.u = Date.now();
     favs.push(fav);
     setFavs(favs);
     session.favId = fav.id;
@@ -1715,6 +1726,7 @@ function logAgain(dateKey, id){
   const clone = JSON.parse(JSON.stringify(meal));
   clone.id = uid();
   clone.time = nowHM();
+  clone.u = Date.now();
   const log = getLog();
   (log[todayISO()] = log[todayISO()] || []).push(clone);
   setLog(log);
@@ -1954,6 +1966,7 @@ $('#foodAdd').addEventListener('click', () => {
 $('#foodDel').addEventListener('click', () => {
   const f = selectedFood();
   if (!f || !confirm('Remove ' + f.name + ' from my foods?')) return;
+  markDeleted(f.id);
   setFoods(getFoods().filter(x => x.id !== f.id));
   renderFoodSel('');
 });
@@ -2241,23 +2254,38 @@ $('#descBtn').addEventListener('click', async () => {
 /* photo entry from inside the meal sheet */
 $('#camBtn').addEventListener('click', () => $('#camIn').click());
 $('#libBtn').addEventListener('click', () => $('#libIn').click());
-$('#camIn').addEventListener('change', e => { firstPhoto(e.target.files[0]); e.target.value = ''; });
-$('#libIn').addEventListener('change', e => { firstPhoto(e.target.files[0]); e.target.value = ''; });
-async function firstPhoto(file){
-  if (!session || !file) return;
+$('#camIn').addEventListener('change', e => { firstPhoto(Array.from(e.target.files)); e.target.value = ''; });
+$('#libIn').addEventListener('change', e => { firstPhoto(Array.from(e.target.files)); e.target.value = ''; });
+/* Up to 8 photos in one go keeps the request a sensible size. */
+const MAX_PHOTOS = 8;
+function takePhotos(files){
+  const room = MAX_PHOTOS - (session ? session.imgs.length : 0);
+  if (files.length > room) toast('Using the first ' + Math.max(0, room) + ' photos (up to ' + MAX_PHOTOS + ' per meal)');
+  return files.slice(0, Math.max(0, room));
+}
+async function firstPhoto(files){
+  if (!session || !files || !files.length) return;
+  files = takePhotos(files);
+  if (!files.length) return;
   session.desc = $('#descIn').value.trim();
-  setSheetState('busy', 'Reading the photo');
+  setSheetState('busy', files.length > 1 ? 'Reading ' + files.length + ' photos' : 'Reading the photo');
   try {
-    const prep = await prepImage(file);
-    session.imgs.push({ b64: prep.b64 });
-    session.previewURL = prep.preview;
-    session.thumb = prep.thumb;
-    $('#shImg').src = prep.preview;
+    for (let i = 0; i < files.length; i++) {
+      const prep = await prepImage(files[i]);
+      session.imgs.push({ b64: prep.b64 });
+      if (i === 0) {
+        session.previewURL = prep.preview;
+        session.thumb = prep.thumb;
+        $('#shImg').src = prep.preview;
+      }
+    }
     setSheetState('busy', 'Reading the plate');
+    const many = session.imgs.length > 1;
+    const what = many ? 'these ' + session.imgs.length + ' photos of the same meal' : 'this meal photo';
     const txt = session.desc
-      ? 'Analyse this meal photo. The user also describes the meal as: "' + session.desc +
-        '". Combine both; stated quantities override what the photo suggests.'
-      : 'Analyse this meal photo and estimate its nutrition.';
+      ? 'Analyse ' + what + '. The user also describes the meal as: "' + session.desc +
+        '". Combine everything; stated quantities override what the photos suggest.'
+      : 'Analyse ' + what + ' and estimate the nutrition of the whole meal.';
     const est = await callClaude(txt);
     if (!session) return;
     applyEstimate(est);
@@ -2271,20 +2299,26 @@ async function firstPhoto(file){
 
 /* ================= add another photo ================= */
 $('#addPhotoBtn').addEventListener('click', () => $('#morIn').click());
-$('#morIn').addEventListener('change', e => { addPhoto(e.target.files[0]); e.target.value = ''; });
-async function addPhoto(file){
-  if (!session || !file) return;
-  setSheetState('busy', 'Reading the new photo');
+$('#morIn').addEventListener('change', e => { addPhoto(Array.from(e.target.files)); e.target.value = ''; });
+async function addPhoto(files){
+  if (!session || !files || !files.length) return;
+  files = takePhotos(files);
+  if (!files.length) return;
+  const before = session.imgs.length;
+  setSheetState('busy', files.length > 1 ? 'Reading ' + files.length + ' new photos' : 'Reading the new photo');
   try {
-    const prep = await prepImage(file);
-    session.imgs.push({ b64: prep.b64 });
-    if (!session.previewURL) {
-      session.previewURL = prep.preview;
-      session.thumb = prep.thumb;
-      $('#shImg').src = prep.preview;
+    for (const file of files) {
+      const prep = await prepImage(file);
+      session.imgs.push({ b64: prep.b64 });
+      if (!session.previewURL) {
+        session.previewURL = prep.preview;
+        session.thumb = prep.thumb;
+        $('#shImg').src = prep.preview;
+      }
     }
     const txt = session.items.length
-      ? 'An additional photo of the same meal has been added. Previous estimate: ' + prevEstimateJSON() +
+      ? (files.length > 1 ? files.length + ' additional photos' : 'An additional photo') + ' of the same meal ' +
+        (files.length > 1 ? 'have' : 'has') + ' been added. Previous estimate: ' + prevEstimateJSON() +
         '\nAnalyse all photos together, plus any text description already given, and return one combined estimate for the entire meal. Same JSON shape only.'
       : 'Analyse these meal photos together and estimate the nutrition of the whole meal.';
     const est = await callClaude(txt);
@@ -2294,7 +2328,7 @@ async function addPhoto(file){
     renderItems();
   } catch(err) {
     if (!session || err.name === 'AbortError') return;
-    session.imgs.pop();
+    session.imgs.length = before;
     setSheetState('result');
     renderItems();
     showSheetError(err.message);
@@ -2342,7 +2376,7 @@ $('#saveMeal').addEventListener('click', () => {
     if (!log[session.origDate].length) delete log[session.origDate];
   }
   const entry = {
-    id: session.id, name: session.name, time: session.time, thumb: session.thumb || '',
+    id: session.id, u: Date.now(), name: session.name, time: session.time, thumb: session.thumb || '',
     favId: session.favId || '',
     confidence: session.confidence || '', assumptions: session.assumptions || [],
     items: session.items.map(i => ({
@@ -2376,6 +2410,7 @@ function openEdit(dateKey, id){
 $('#delMeal').addEventListener('click', () => {
   if (!session || session.mode !== 'edit') return;
   if (!confirm('Delete this meal?')) return;
+  markDeleted(session.id);
   const log = getLog();
   if (log[session.origDate]) {
     log[session.origDate] = log[session.origDate].filter(m => m.id !== session.id);
@@ -2510,7 +2545,7 @@ $('#exSave').addEventListener('click', () => {
   }
   (exlog[dk] = exlog[dk] || []).push.apply(exlog[dk],
     rows.map((x, i) => Object.assign({ id: (exSession.mode === 'edit' && i === 0) ? exSession.id : uid(),
-      name: x.name, mins: x.mins, kcal: x.kcal, time: x.time },
+      u: Date.now(), name: x.name, mins: x.mins, kcal: x.kcal, time: x.time },
       x.sid ? { src: x.src || 'strava', sid: x.sid } : {})));
   setEx(exlog);
   viewDate = dk;
@@ -2533,6 +2568,7 @@ function openExEdit(dateKey, id){
 $('#exDel').addEventListener('click', () => {
   if (!exSession || exSession.mode !== 'edit') return;
   if (!confirm('Delete this exercise entry?')) return;
+  markDeleted(exSession.id);
   const exlog = getEx();
   const gone = (exlog[exSession.origDate] || []).find(x => x.id === exSession.id);
   if (gone && gone.sid && gone.src === 'garmin') garminSkip(gone.sid);
@@ -2940,6 +2976,84 @@ function mergeThumbsIntoFavs(remote){
   return remote;
 }
 
+/* Sync merges instead of overwriting. Every device combines its copy with the
+   cloud copy by entry id (newest edit wins, deletions are remembered), so a phone
+   or browser holding an older copy can never wipe out days logged elsewhere. */
+const isDay = k => /^\d{4}-\d\d-\d\d$/.test(k);
+function ver(e){ return Number(e && (e.u || e.lastUsed)) || 0; }
+function mergeDated(local, remote, del){
+  const best = {};
+  const take = (src, mine) => Object.keys(src || {}).forEach(d => {
+    if (!isDay(d) || !Array.isArray(src[d])) return;
+    src[d].forEach(e => {
+      if (!e || !e.id || del[e.id]) return;
+      const cur = best[e.id];
+      if (!cur || ver(e) > ver(cur.e) || (mine && ver(e) === ver(cur.e))) best[e.id] = { d: d, e: e };
+    });
+  });
+  take(remote, false);
+  take(local, true);
+  const out = {};
+  Object.keys(best).forEach(id => { const b = best[id]; (out[b.d] = out[b.d] || []).push(b.e); });
+  Object.keys(out).forEach(d => out[d].sort((x, y) => (x.time < y.time ? -1 : 1)));
+  return out;
+}
+function mergeList(local, remote, del){
+  const out = [], seen = {};
+  (local || []).forEach(e => { if (e && e.id && !del[e.id]) { seen[e.id] = out.length; out.push(e); } });
+  (remote || []).forEach(e => {
+    if (!e || !e.id || del[e.id]) return;
+    if (seen[e.id] === undefined) { seen[e.id] = out.length; out.push(e); }
+    else if (ver(e) > ver(out[seen[e.id]])) out[seen[e.id]] = Object.assign({}, e, out[seen[e.id]].thumb ? { thumb: out[seen[e.id]].thumb } : {});
+  });
+  return out;
+}
+function mergeDeleted(a, b){
+  const out = Object.assign({}, b || {}, a || {});
+  const cutoff = Date.now() - 180 * 86400000;
+  Object.keys(out).forEach(k => { if (out[k] < cutoff) delete out[k]; });
+  return out;
+}
+/* Pull the cloud copy and merge it into this device. Returns true if the cloud
+   is missing anything this device has (so a push is due). */
+async function mergeFromCloud(){
+  const c = syncCfg();
+  const rows = await supa('cc_pull_state', { p_handle: c.handle, p_pass: c.pass }) || [];
+  const r = {};
+  rows.forEach(x => { r[x.kind] = x; });
+  const s = getSettings();
+  const last = s.syncLast || {};
+  const del = mergeDeleted(getDeleted(), r.deleted && r.deleted.data);
+  const before = JSON.stringify([getLog(), getEx(), getFavs(), getFoods(), getWeights()]);
+  const log = mergeThumbsIntoLog(mergeDated(getLog(), r.log && r.log.data, del));
+  const ex = mergeDated(getEx(), r.exercise && r.exercise.data, del);
+  const favs = mergeThumbsIntoFavs(mergeList(getFavs(), r.favs && r.favs.data, del));
+  const foods = mergeList(getFoods(), r.foods && r.foods.data, del);
+  const weights = Object.assign({}, (r.weights && r.weights.data) || {}, getWeights());
+  localStorage.setItem(XKEY, JSON.stringify(del));
+  localStorage.setItem(LKEY, JSON.stringify(log));
+  localStorage.setItem(EKEY, JSON.stringify(ex));
+  localStorage.setItem(FKEY, JSON.stringify(favs));
+  localStorage.setItem(DKEY, JSON.stringify(foods));
+  localStorage.setItem(WKEY, JSON.stringify(weights));
+  if (r.profile && (!last.profile || r.profile.updated_at > last.profile)) {
+    adoptProfile(r.profile.data);
+    last.profile = r.profile.updated_at;
+  }
+  const s2 = getSettings();
+  s2.syncLast = last;
+  localStorage.setItem(SKEY, JSON.stringify(s2));
+  const changedHere = JSON.stringify([log, ex, favs, foods, weights]) !== before;
+  const cloudSame = r.log && r.exercise && r.favs && r.foods && r.weights && r.deleted &&
+    JSON.stringify(stripLogForSync(log)) === JSON.stringify(r.log.data) &&
+    JSON.stringify(ex) === JSON.stringify(r.exercise.data) &&
+    JSON.stringify(stripFavsForSync(favs)) === JSON.stringify(r.favs.data) &&
+    JSON.stringify(foods) === JSON.stringify(r.foods.data) &&
+    JSON.stringify(weights) === JSON.stringify(r.weights.data) &&
+    JSON.stringify(del) === JSON.stringify(r.deleted.data);
+  return { changedHere: changedHere, needPush: !cloudSame };
+}
+
 let pushT = null, retryT = null, pushing = false;
 function pushSoon(){
   if (!syncReady()) return;
@@ -2953,10 +3067,13 @@ async function doPush(){
   const c = syncCfg();
   const stamp = new Date().toISOString();
   try {
+    /* Merge with the cloud first, so this push can only add to it. */
+    const m = await mergeFromCloud();
+    if (m.changedHere) { renderFavRow(); renderDay(); }
     const kinds = {
       log: stripLogForSync(getLog()), exercise: getEx(), weights: getWeights(),
       favs: stripFavsForSync(getFavs()), profile: profileLite(getSettings()),
-      foods: getFoods()
+      foods: getFoods(), deleted: getDeleted()
     };
     for (const k of Object.keys(kinds)) {
       await supa('cc_push_state', { p_handle: c.handle, p_pass: c.pass, p_kind: k, p_data: kinds[k], p_updated: stamp });
@@ -2977,43 +3094,27 @@ async function doPush(){
 }
 async function doPull(){
   if (!syncReady()) return;
-  const c = syncCfg();
   try {
-    const rows = await supa('cc_pull_state', { p_handle: c.handle, p_pass: c.pass }) || [];
-    const s = getSettings();
-    const last = s.syncLast || {};
-    let changed = false;
-    const store = {
-      log: LKEY, exercise: EKEY, weights: WKEY, favs: FKEY, foods: DKEY
-    };
-    rows.forEach(r => {
-      const newer = !last[r.kind] || r.updated_at > last[r.kind];
-      if (!newer) return;
-      if (store[r.kind]) {
-        let data = r.data;
-        if (r.kind === 'log') data = mergeThumbsIntoLog(data);
-        if (r.kind === 'favs') data = mergeThumbsIntoFavs(data);
-        localStorage.setItem(store[r.kind], JSON.stringify(data));
-        changed = true;
-      } else if (r.kind === 'profile') {
-        adoptProfile(r.data);
-        changed = true;
-      }
-      last[r.kind] = r.updated_at;
-    });
-    const s2 = getSettings();
-    s2.syncLast = last;
-    localStorage.setItem(SKEY, JSON.stringify(s2));
-    if (changed) {
+    const m = await mergeFromCloud();
+    if (m.changedHere) {
       renderFavRow();
       renderDay();
       toast('Synced from cloud');
     }
+    if (m.needPush) pushSoon();
     setSyncStat('Synced ' + new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }));
   } catch(err) {
     setSyncStat('Could not reach sync. ' + err.message);
   }
 }
+/* Catch up whenever the app comes back to the front, not only on a fresh open. */
+let lastResumePull = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && syncReady() && Date.now() - lastResumePull > 30000) {
+    lastResumePull = Date.now();
+    doPull();
+  }
+});
 window.addEventListener('online', () => { if (syncReady()) doPush(); });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden' && syncReady()) {
@@ -3303,7 +3404,7 @@ async function garminSync(force){
         id: uid(), name: a.name || (a.type ? a.type.charAt(0).toUpperCase() + a.type.slice(1).replace(/_/g, ' ') : 'Activity'),
         mins: r0((Number(a.moving_s) || 0) / 60), kcal: garminKcal(a),
         time: /^\d\d:\d\d$/.test(hm) ? hm : '',
-        src: 'garmin', sid: a.id
+        src: 'garmin', sid: a.id, u: Date.now()
       };
       kcal += entry.kcal;
       (exlog[day] = exlog[day] || []).push(entry);
@@ -3427,6 +3528,7 @@ $('#authAction').addEventListener('click', async () => {
     localStorage.removeItem(WKEY);
     localStorage.removeItem(FKEY);
     localStorage.removeItem(DKEY);
+    localStorage.removeItem(XKEY);
     const s = getSettings();
     ['goal','pgoal','defMin','defMax','sex','age','heightCm','weightKg','activity','targetW','targetDate',
      'syncHandle','syncPass','syncLast','skipAuth','strava','stravaChecked','garmin','garminChecked'].forEach(k => delete s[k]);
@@ -3538,6 +3640,7 @@ $('#wipeBtn').addEventListener('click', () => {
   localStorage.removeItem(GDKEY);
   localStorage.removeItem('ml.stravaSkip');
   localStorage.removeItem(DKEY);
+  localStorage.removeItem(XKEY);
   closeSettings();
   applyTheme('light');
   renderFavRow();
