@@ -155,6 +155,13 @@ textarea{width:100%; resize:vertical;}
   pointer-events:none;}
 
 /* ---------- dashboard: stat chips ---------- */
+.ins{margin-top:10px; background:var(--iron2); border:1px solid var(--line); border-radius:14px; padding:11px 12px 12px; text-align:left;}
+.ins-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px 10px; margin-top:10px;}
+.ins-t .mt-val{font-size:18px;}
+.ins-t .mt-val span{font-size:10.5px;}
+.ins-line{font-family:var(--mono); font-size:10.5px; color:var(--ash); line-height:1.55; margin-top:10px;
+  padding-top:10px; border-top:1px solid var(--line);}
+.ins-line b{color:var(--porcelain); font-weight:600;}
 .chips{font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase;
   color:var(--ash); margin-top:12px; font-variant-numeric:tabular-nums;}
 .chips b{color:var(--porcelain); font-weight:600;}
@@ -449,6 +456,11 @@ select{-webkit-appearance:none; appearance:none;
     <svg class="wk-chart" id="wkChart" viewBox="0 0 340 146" role="img" aria-label="Calories eaten and burned, last 7 days"></svg>
     <div class="wk-legend"><span><i class="k-eat"></i>eaten</span><span><i class="k-burn"></i>burned</span><span><i class="k-zone"></i>500-1,000 under</span></div>
     <div class="wk-sum" id="wkSum"></div>
+  </div>
+  <div class="ins" id="insPanel" hidden>
+    <div class="wk-head"><span id="insLbl">This week</span><span></span></div>
+    <div class="ins-grid" id="insGrid"></div>
+    <div class="ins-line" id="insLine"></div>
   </div>
   <div class="chips" id="chipLine"></div>
 </section>
@@ -1320,6 +1332,104 @@ function renderDash(st, log, tot, burned){
     }
   }
   $('#chipLine').innerHTML = chips;
+  renderInsights(st, log, days);
+}
+
+/* "This week" stats for the 7 days ending on the day being viewed. Averages
+   use full logged days only, because today is still in progress. */
+function renderInsights(st, log, days){
+  const exlog = getEx();
+  const aim = deficitAim(st);
+  const floor = st.sex === 'f' ? 1200 : 1500;
+  const today = todayISO();
+  const rows = days.filter(d => (log[d] || []).length).map(d => {
+    const t = dayTotals(log, d);
+    const burn = dayBurnInfo(st, d, dayBurn(exlog, d)).burn;
+    return { d: d, kcal: t.kcal, p: t.p, burn: burn, under: burn ? burn - t.kcal : 0 };
+  });
+  const full = rows.filter(r => r.d !== today && r.burn);
+  if (!rows.length) { $('#insPanel').hidden = true; return; }
+  $('#insPanel').hidden = false;
+  $('#insLbl').textContent = viewDate === today ? 'This week' : 'Week to ' +
+    new Date(viewDate + 'T12:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+
+  const tile = (label, val, unit, sub) => '<div class="ins-t"><div class="mt-label">' + label + '</div>' +
+    '<div class="mt-val">' + val + (unit ? '<span> ' + unit + '</span>' : '') + '</div>' +
+    '<div class="mt-sub">' + sub + '</div></div>';
+  const tiles = [];
+
+  /* Fat lost: every 7,700 kcal under is about 1 kg. */
+  const banked = full.reduce((a, r) => a + r.under, 0);
+  tiles.push(tile('Fat ' + (banked >= 0 ? 'lost' : 'gained') + ' (est.)', r1(Math.abs(banked) / 7700), 'kg',
+    nf.format(r0(Math.abs(banked))) + ' kcal ' + (banked >= 0 ? 'under' : 'over') + ' in ' + full.length + 'd'));
+
+  /* Where the current pace lands. Uses up to 14 recent full days for a steadier pace. */
+  const longDays = lastNDaysEnding(viewDate, 14).filter(d => d !== today && (log[d] || []).length);
+  const longUnder = longDays.map(d => dayBurnInfo(st, d, dayBurn(exlog, d)).burn - dayTotals(log, d).kcal);
+  const pace = longUnder.length ? (longUnder.reduce((a, v) => a + v, 0) / longUnder.length) * 7 / 7700 : 0;
+  const wNow = currentWeightKg();
+  const tW = Number(st.targetW) || 0;
+  if (wNow && tW && wNow > tW && pace > 0.05) {
+    const when = new Date(today + 'T12:00:00');
+    when.setDate(when.getDate() + Math.round((wNow - tW) / pace * 7));
+    tiles.push(tile('On pace for', r1(tW), 'kg', 'by ' + when.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: when.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined })));
+  } else if (wNow && longUnder.length) {
+    const in4 = wNow - pace * 4;
+    tiles.push(tile('In 4 weeks', r1(in4), 'kg', 'at ' + (pace >= 0 ? '&minus;' : '+') + r1(Math.abs(pace)) + ' kg/wk'));
+  }
+
+  /* Days landing in the 500-1000 under zone. */
+  const inZone = full.filter(r => r.kcal <= r.burn - aim.min && r.kcal >= Math.max(floor, r.burn - aim.max)).length;
+  tiles.push(tile('Days in the zone', inZone, '/ ' + full.length, nf.format(aim.min) + '-' + nf.format(aim.max) + ' under'));
+
+  /* Protein. */
+  const pg = Number(st.pgoal) || 0;
+  const pDays = rows.filter(r => r.d !== today);
+  const pAvg = pDays.length ? pDays.reduce((a, r) => a + r.p, 0) / pDays.length : 0;
+  if (pg) tiles.push(tile('Protein goal hit', pDays.filter(r => r.p >= pg).length, '/ ' + pDays.length, 'avg ' + r0(pAvg) + ' g of ' + pg));
+  else tiles.push(tile('Avg protein', r0(pAvg), 'g', 'set a goal in You'));
+
+  /* Burn from Garmin where available. */
+  const gd = getGarminDays();
+  const gDays = days.filter(d => d !== today && gd[d] && gd[d].total > 0);
+  if (gDays.length) {
+    const gAvg = gDays.reduce((a, d) => a + gd[d].total, 0) / gDays.length;
+    const aAvg = gDays.reduce((a, d) => a + (gd[d].active || 0), 0) / gDays.length;
+    tiles.push(tile('Avg burn (Garmin)', nf.format(r0(gAvg)), 'kcal', 'active ' + nf.format(r0(aAvg)) + ' a day'));
+  }
+
+  /* Best day. */
+  if (full.length > 1) {
+    const best = full.slice().sort((a, b) => b.under - a.under)[0];
+    tiles.push(tile('Best day', new Date(best.d + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'short' }), '',
+      nf.format(r0(best.under)) + ' under'));
+  }
+  $('#insGrid').innerHTML = tiles.join('');
+
+  /* Biggest calorie sources this week, grouped by food name. */
+  const by = {};
+  let all = 0;
+  days.forEach(d => (log[d] || []).forEach(m => m.items.forEach(i => {
+    const key = String(i.name || '').toLowerCase().replace(/\(.*?\)/g, '').replace(/\d+\s*(g|ml|x)?\b/g, '')
+      .replace(/\b(slices?|pieces?|serves?|cooked|seasoned)\b/g, '').replace(/[^a-z& ]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!key) return;
+    by[key] = (by[key] || 0) + (Number(i.kcal) || 0);
+    all += Number(i.kcal) || 0;
+  })));
+  const top = Object.keys(by).sort((a, b) => by[b] - by[a]).slice(0, 3);
+  let line = '';
+  if (all > 0 && top.length) {
+    line += 'Top calorie sources: ' + top.map(k => '<b>' + esc(k.charAt(0).toUpperCase() + k.slice(1)) + '</b> ' +
+      r0(100 * by[k] / all) + '%').join(' &middot; ');
+  }
+  /* A fun equivalent for the deficit banked. */
+  if (banked > 300) {
+    const eq = [['hash browns', 109], ['slices of pizza', 285], ['Tim Tams', 95], ['cans of Coke', 139], ['Big Macs', 563]];
+    const pick = eq[Math.floor(new Date(viewDate + 'T12:00:00').getTime() / 86400000 / 7) % eq.length];
+    line += (line ? '<br>' : '') + 'Your deficit this week is about <b>' + r0(banked / pick[1]) + ' ' + pick[0] + '</b> you didn&rsquo;t eat.';
+  }
+  $('#insLine').innerHTML = line;
+  $('#insLine').hidden = !line;
 }
 
 /* Last 7 days: a column for what you ate, a line for what you burned, and a
