@@ -125,6 +125,18 @@ textarea{width:100%; resize:vertical;}
 .bd-bar i{display:block; height:100%; background:var(--flame); border-radius:3px;}
 .dz{display:flex; flex-wrap:wrap; gap:6px 14px; font-family:var(--mono); font-size:11px; color:var(--ash); margin-top:8px;}
 .dz b{color:var(--porcelain);}
+.dash-range{display:flex; gap:8px; align-items:center; margin:-6px 0 14px; font-family:var(--mono); font-size:11px; color:var(--ash);}
+.dash-range input{flex:1; min-width:0; font-family:var(--mono); font-size:13px; padding:8px 8px;}
+.dz button{background:none; border:1px solid var(--line); border-radius:999px; padding:5px 10px; font-family:var(--mono); font-size:11px; color:var(--ash);}
+.dz button.on{border-color:var(--porcelain); color:var(--porcelain);}
+.dd{margin-top:12px; border:1px solid var(--line); border-radius:14px; padding:12px; background:var(--iron2);}
+.dd-head{display:flex; justify-content:space-between; align-items:center; gap:10px;}
+.dd-title{font-weight:600; font-size:15px;}
+.dd-nums{font-family:var(--mono); font-size:11.5px; color:var(--ash); margin-top:6px; line-height:1.6;}
+.dd-nums b{color:var(--porcelain);}
+.dd-day{display:flex; justify-content:space-between; gap:8px; width:100%; text-align:left; background:none; border:none;
+  border-bottom:1px solid var(--line); padding:9px 0; font-size:14px; color:var(--porcelain);}
+.dd-day span:last-child{font-family:var(--mono); font-size:12px; color:var(--ash); flex:none;}
 .sg-card{border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin-top:8px; background:var(--iron2);}
 .sg-top{display:flex; justify-content:space-between; align-items:center; gap:10px;}
 .sg-name{font-weight:600; font-size:14.5px;}
@@ -725,11 +737,16 @@ select{-webkit-appearance:none; appearance:none;
         <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
     </div>
+    <div class="dash-range">
+      <input type="date" id="dashFrom" aria-label="From"><span>to</span><input type="date" id="dashTo" aria-label="To">
+    </div>
     <div class="ins-grid" id="dashTiles" style="margin-top:0"></div>
     <div class="eyebrow">Eaten vs burned</div>
     <svg class="wk-chart" id="dashChart" viewBox="0 0 340 146" role="img" aria-label="Calories eaten and burned by day"></svg>
     <div class="wk-legend" id="dashLegend"></div>
+    <div class="set-note" style="margin:8px 0 0">Tap a day, or a zone below, for a summary.</div>
     <div class="dz" id="dashZones"></div>
+    <div id="dashDetail"></div>
     <div class="eyebrow">Top calorie sources</div>
     <div id="dashFoodsK"></div>
     <div class="eyebrow">Top protein sources</div>
@@ -1608,7 +1625,7 @@ function renderWeekChart(st, log, days){
 }
 /* Columns coloured by the zone each day landed in, over faint zone bands,
    with the burned line on top. Works for 7 to 90 days. */
-function renderZoneChart(el, st, log, days, tappable){
+function renderZoneChart(el, st, log, days, tappable, pickAttr){
   const c = tc(), zc = c.z;
   const exlog = getEx();
   const rows = days.map(d => dayFacts(st, log, exlog, d));
@@ -1647,7 +1664,7 @@ function renderZoneChart(el, st, log, days, tappable){
         'H' + (x0 + w - rr).toFixed(1) + 'Q' + (x0 + w).toFixed(1) + ' ' + yt.toFixed(1) + ' ' + (x0 + w).toFixed(1) + ' ' + (yt + rr).toFixed(1) +
         'V' + B + 'Z" fill="' + col + '"/>';
     }
-    if (r.burn) {
+    if (r.burn && r.logged) {
       const hw = Math.min(15, slot * 0.46);
       svg += '<line x1="' + (cx - hw).toFixed(1) + '" x2="' + (cx + hw).toFixed(1) + '" y1="' + y(r.burn).toFixed(1) +
         '" y2="' + y(r.burn).toFixed(1) + '" stroke="' + c.text + '" stroke-width="2" stroke-linecap="round"/>';
@@ -1659,8 +1676,8 @@ function renderZoneChart(el, st, log, days, tappable){
       svg += '<text x="' + cx.toFixed(1) + '" y="136" text-anchor="middle" font-size="9" font-family="IBM Plex Mono, monospace" fill="' +
         (sel ? c.text : c.ash) + '"' + (sel ? ' font-weight="600"' : '') + '>' + lb + '</text>';
     }
-    if (sel) svg += '<rect x="' + (cx - 8).toFixed(1) + '" y="141" width="16" height="2" rx="1" fill="' + c.text + '"/>';
-    svg += '<rect class="hit" ' + (tappable ? 'data-day="' + r.d + '" ' : '') + 'x="' + (L + slot * i).toFixed(1) + '" y="0" width="' + slot.toFixed(1) +
+    if (sel || (pickAttr && r.d === dashPick)) svg += '<rect x="' + (cx - 8).toFixed(1) + '" y="141" width="16" height="2" rx="1" fill="' + c.text + '"/>';
+    svg += '<rect class="hit" ' + (tappable ? 'data-day="' + r.d + '" ' : pickAttr && r.logged ? pickAttr + '="' + r.d + '" ' : '') + 'x="' + (L + slot * i).toFixed(1) + '" y="0" width="' + slot.toFixed(1) +
       '" height="146" fill="transparent"><title>' + esc(dateLabel(r.d)) + ': ate ' + nf.format(r0(r.kcal)) +
       (r.burn ? ', burned ' + nf.format(r0(r.burn)) + (r.logged ? ' (' + ZONE_LBL[r.zone] + ')' : '') : '') + '</title></rect>';
   });
@@ -1727,12 +1744,26 @@ $('#bdClose').addEventListener('click', () => $('#bdSheet').classList.remove('op
 $('#bdSheet').addEventListener('click', e => { if (e.target === e.currentTarget) $('#bdSheet').classList.remove('open'); });
 
 /* ================= dashboard ================= */
-let dashN = 30;
+let dashN = 30, dashFrom = '', dashTo = '', dashPick = '', dashZone = '';
+function isoAdd(iso, n){ const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return localISO(d); }
+function daysBetween(a, b){
+  const out = [];
+  for (let d = a; d <= b && out.length < 366; d = isoAdd(d, 1)) out.push(d);
+  return out;
+}
+function setDashPreset(n){
+  dashN = n;
+  dashTo = todayISO();
+  dashFrom = isoAdd(dashTo, -(n - 1));
+}
 function renderDashboard(){
   const st = getSettings(), log = getLog();
   const today = todayISO();
-  const days = lastNDaysEnding(today, dashN);
-  const rows = renderZoneChart($('#dashChart'), st, log, days, false);
+  if (!dashFrom || !dashTo) setDashPreset(dashN);
+  $('#dashFrom').value = dashFrom; $('#dashTo').value = dashTo;
+  $('#dashFrom').max = today; $('#dashTo').max = today;
+  const days = daysBetween(dashFrom, dashTo);
+  const rows = renderZoneChart($('#dashChart'), st, log, days, false, 'data-dday');
   $('#dashLegend').innerHTML = zoneLegend();
   const full = rows.filter(r => r.logged && r.d !== today);
   const withBurn = full.filter(r => r.burn);
@@ -1744,7 +1775,7 @@ function renderDashboard(){
   withBurn.forEach(r => counts[r.zone]++);
   const w = getWeights(), wk = Object.keys(w).filter(d => d >= days[0]).sort();
   const tiles = [
-    insTile('Days logged', full.length, '/ ' + (dashN - 1), 'full days in range'),
+    insTile('Days logged', full.length, '/ ' + days.filter(d => d !== today).length, 'full days in range'),
     insTile('Avg eaten', nf.format(r0(avg(full, r => r.kcal))), 'kcal', 'protein ' + r0(avg(full, r => r.p)) + ' g'),
     insTile('Avg burned', nf.format(r0(avg(withBurn, r => r.burn))), 'kcal', 'Garmin where synced'),
     insTile('Avg deficit', nf.format(r0(avg(withBurn, r => r.under))), 'kcal', (pace >= 0 ? '&minus;' : '+') + r1(Math.abs(pace)) + ' kg/wk pace'),
@@ -1759,8 +1790,9 @@ function renderDashboard(){
   ];
   $('#dashTiles').innerHTML = tiles.join('');
   const zc = tc().z;
-  $('#dashZones').innerHTML = ['fast', 'lose', 'maint', 'over'].map(k => '<span><i class="zd" style="background:' + zc[k] + '"></i>' +
-    ZONE_LBL[k] + ' <b>' + counts[k] + '</b></span>').join('');
+  $('#dashZones').innerHTML = ['fast', 'lose', 'maint', 'over'].map(k => '<button data-zone="' + k + '"' + (dashZone === k ? ' class="on"' : '') + '>' +
+    '<i class="zd" style="background:' + zc[k] + '"></i>' + ZONE_LBL[k] + ' <b>' + counts[k] + '</b></button>').join('');
+  renderDashDetail(st, rows);
   const top = (key, unit) => {
     const by = {}; let all = 0;
     days.forEach(d => (log[d] || []).forEach(ml => ml.items.forEach(i => {
@@ -1777,13 +1809,71 @@ function renderDashboard(){
   $('#dashFoodsK').innerHTML = top('kcal', 'kcal');
   $('#dashFoodsP').innerHTML = top('p', 'g');
 }
-$('#dashBtn').addEventListener('click', () => { $('#dashSheet').classList.add('open'); renderDashboard(); });
+/* Drill-down under the chart: one day, or every day in a zone. */
+function renderDashDetail(st, rows){
+  const el = $('#dashDetail');
+  const zc = tc().z;
+  const pill = z => '<span class="zp" style="display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;padding:3px 9px;border-radius:999px;border:1.5px solid ' + zc[z] + '"><i class="zd" style="margin:0;background:' + zc[z] + '"></i>' + ZONE_LBL[z] + '</span>';
+  const diff = r => r.under >= 0 ? nf.format(r0(r.under)) + ' under' : nf.format(r0(-r.under)) + ' over';
+  const topFoods = list => {
+    const by = {}; let all = 0;
+    list.forEach(r => r.meals.forEach(m => m.items.forEach(i => { const k = foodKey(i.name); if (!k) return; by[k] = (by[k] || 0) + (Number(i.kcal) || 0); all += Number(i.kcal) || 0; })));
+    return Object.keys(by).sort((a, b) => by[b] - by[a]).slice(0, 5).map(k => '<div class="bd-row"><div class="bd-top"><span>' + esc(cap(k)) + '</span><b>' +
+      nf.format(r0(by[k] / list.length)) + ' kcal</b></div><div class="bd-sub">' + r0(100 * by[k] / Math.max(1, all)) + '% of the calories' +
+      (list.length > 1 ? ', per day on average' : '') + '</div></div>').join('');
+  };
+  if (dashPick) {
+    const r = rows.find(x => x.d === dashPick);
+    if (!r || !r.logged) { el.innerHTML = ''; return; }
+    const pg = Number(st.pgoal) || 0;
+    el.innerHTML = '<div class="dd"><div class="dd-head"><div class="dd-title">' + esc(dateLabel(r.d)) + '</div>' + (r.zone ? pill(r.zone) : '') + '</div>' +
+      '<div class="dd-nums">Ate <b>' + nf.format(r0(r.kcal)) + '</b> &middot; burned <b>' + nf.format(r0(r.burn)) + '</b> &middot; <b>' + diff(r) + '</b><br>' +
+      'Protein <b>' + r0(r.p) + ' g</b>' + (pg ? ' of ' + pg : '') + ' &middot; carbs ' + r0(r.c) + ' g &middot; fat ' + r0(r.f) + ' g</div>' +
+      '<div class="eyebrow" style="margin-top:12px">Meals</div>' +
+      r.meals.slice().sort((a, b) => (a.time < b.time ? -1 : 1)).map(m => { const t = sumItems(m.items);
+        return '<div class="bd-row"><div class="bd-top"><span>' + esc(m.name) + '</span><b>' + nf.format(r0(t.kcal)) + ' kcal</b></div>' +
+          '<div class="bd-sub">' + esc(m.time || '') + ' &middot; ' + r0(t.p) + ' g protein</div></div>'; }).join('') +
+      '<div class="eyebrow" style="margin-top:12px">Biggest calorie sources</div>' + topFoods([r]) +
+      '<button class="ghost small" data-open="' + r.d + '">Open this day</button></div>';
+    return;
+  }
+  if (dashZone) {
+    const list = rows.filter(r => r.logged && r.burn && r.d !== todayISO() && r.zone === dashZone);
+    if (!list.length) { el.innerHTML = '<div class="dd"><div class="dd-title">' + ZONE_LBL[dashZone] + '</div><div class="dd-nums">No full days in this zone in the range.</div></div>'; return; }
+    const avg = f => list.reduce((a, r) => a + f(r), 0) / list.length;
+    el.innerHTML = '<div class="dd"><div class="dd-head"><div class="dd-title">' + list.length + ' day' + (list.length === 1 ? '' : 's') + '</div>' + pill(dashZone) + '</div>' +
+      '<div class="dd-nums">On average: ate <b>' + nf.format(r0(avg(r => r.kcal))) + '</b> &middot; burned <b>' + nf.format(r0(avg(r => r.burn))) + '</b> &middot; <b>' +
+      diff({ under: avg(r => r.under) }) + '</b><br>Protein <b>' + r0(avg(r => r.p)) + ' g</b> &middot; ' + r1(avg(r => r.meals.length)) + ' meals a day</div>' +
+      '<div class="eyebrow" style="margin-top:12px">Days</div>' +
+      list.map(r => '<button class="dd-day" data-dday="' + r.d + '"><span>' + esc(dateLabel(r.d)) + '</span><span>ate ' + nf.format(r0(r.kcal)) + ' &middot; ' + diff(r) + '</span></button>').join('') +
+      '<div class="eyebrow" style="margin-top:12px">Biggest calorie sources on these days</div>' + topFoods(list) + '</div>';
+    return;
+  }
+  el.innerHTML = '';
+}
+$('#dashBtn').addEventListener('click', () => { dashPick = ''; dashZone = ''; $('#dashSheet').classList.add('open'); renderDashboard(); });
+['dashFrom', 'dashTo'].forEach(id => $('#' + id).addEventListener('change', () => {
+  let a = $('#dashFrom').value, b = $('#dashTo').value;
+  if (!a || !b) return;
+  if (a > b) { const t = a; a = b; b = t; }
+  if (daysBetween(a, b).length >= 366) a = isoAdd(b, -365);
+  dashFrom = a; dashTo = b; dashPick = '';
+  $$('#dashSheet [data-n]').forEach(x => x.classList.remove('on'));
+  renderDashboard();
+}));
 $('#dashClose').addEventListener('click', () => $('#dashSheet').classList.remove('open'));
 $('#dashSheet').addEventListener('click', e => {
   if (e.target === e.currentTarget) { $('#dashSheet').classList.remove('open'); return; }
+  const day = e.target.closest('[data-dday]');
+  if (day) { dashPick = day.dataset.dday === dashPick ? '' : day.dataset.dday; renderDashboard(); if (dashPick) $('#dashDetail').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); return; }
+  const zb = e.target.closest('[data-zone]');
+  if (zb) { dashZone = zb.dataset.zone === dashZone ? '' : zb.dataset.zone; dashPick = ''; renderDashboard(); return; }
+  const op = e.target.closest('[data-open]');
+  if (op) { viewDate = op.dataset.open; $('#dashSheet').classList.remove('open'); renderDay(); window.scrollTo(0, 0); return; }
   const b = e.target.closest('[data-n]');
   if (!b) return;
-  dashN = Number(b.dataset.n);
+  setDashPreset(Number(b.dataset.n));
+  dashPick = '';
   $$('#dashSheet [data-n]').forEach(x => x.classList.toggle('on', x === b));
   renderDashboard();
 });
