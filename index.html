@@ -103,6 +103,30 @@ textarea{width:100%; resize:vertical;}
 .goal-lbl .over{color:var(--danger);}
 .goal-lbl b{color:var(--porcelain); font-weight:600;}
 .goal-lbl .zone{color:var(--flame);}
+.gauge{display:block; height:auto;}
+.gauge svg{display:block; width:100%; height:24px;}
+.zd{display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; vertical-align:middle;}
+.mtile, .kcal{cursor:pointer;}
+.act-hd{font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--ash); padding:16px 2px 4px;}
+.m-kcal.burn span{font-size:11px; font-weight:500; margin-left:3px;}
+.bd-tot{font-family:var(--mono); font-size:12px; color:var(--ash); margin:-8px 0 14px;}
+.bd-tot b{color:var(--porcelain); font-size:20px;}
+.bd-row{padding:8px 0; border-bottom:1px solid var(--line);}
+.bd-top{display:flex; justify-content:space-between; gap:10px; font-size:14px;}
+.bd-top span:first-child{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.bd-top b{font-family:var(--mono); font-weight:600; flex:none;}
+.bd-sub{font-family:var(--mono); font-size:10.5px; color:var(--ash); margin-top:2px;}
+.bd-bar{height:5px; border-radius:3px; background:rgba(var(--ink),.1); margin-top:6px; overflow:hidden;}
+.bd-bar i{display:block; height:100%; background:var(--flame); border-radius:3px;}
+.dz{display:flex; flex-wrap:wrap; gap:6px 14px; font-family:var(--mono); font-size:11px; color:var(--ash); margin-top:8px;}
+.dz b{color:var(--porcelain);}
+.sg-card{border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin-top:8px; background:var(--iron2);}
+.sg-top{display:flex; justify-content:space-between; align-items:center; gap:10px;}
+.sg-name{font-weight:600; font-size:14.5px;}
+.sg-sub{font-family:var(--mono); font-size:10.5px; color:var(--ash); margin-top:3px;}
+.sg-log{padding:7px 12px; font-size:13px; flex:none;}
+.sg-tip{font-size:13.5px; line-height:1.5; margin-top:8px; padding-left:14px; position:relative;}
+.sg-tip::before{content:''; position:absolute; left:0; top:8px; width:6px; height:6px; border-radius:50%; background:var(--flame);}
 .zones{margin:10px auto 0; max-width:380px; font-family:var(--mono); font-size:11.5px; color:var(--ash); text-align:left;}
 .zn{display:grid; grid-template-columns:1fr 50px 76px 84px; gap:6px; padding:5px 10px; border-radius:8px; align-items:baseline;}
 .zn b{color:var(--porcelain); font-weight:600; text-align:right;}
@@ -402,6 +426,12 @@ select{-webkit-appearance:none; appearance:none;
     <button id="profBtn" class="icon-btn" aria-label="You and your goals">
       <svg viewBox="0 0 24 24"><path d="M20 21v-1.5a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5V21"/><circle cx="12" cy="8" r="4"/></svg>
     </button>
+    <button id="dashBtn" class="icon-btn" aria-label="Dashboard">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="9" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="5" rx="1.5"/><rect x="13.5" y="11" width="7.5" height="10" rx="1.5"/><rect x="3" y="15" width="7.5" height="6" rx="1.5"/></svg>
+    </button>
+    <button id="sugBtn" class="icon-btn" aria-label="Suggestions">
+      <svg viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.6.5 1.1 1.3 1.1 2.2h5c0-.9.5-1.7 1.1-2.2A6 6 0 0 0 12 3z"/></svg>
+    </button>
     <button id="trendBtn" class="icon-btn" aria-label="Trends">
       <svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>
     </button>
@@ -425,26 +455,26 @@ select{-webkit-appearance:none; appearance:none;
 </nav>
 
 <section class="readout">
-  <div class="kcal"><span id="dayKcal">0</span><span class="unit">kcal</span></div>
+  <div class="kcal" data-m="kcal" role="button" aria-label="Where today's calories come from"><span id="dayKcal">0</span><span class="unit">kcal</span></div>
   <div id="goalWrap" class="goal" hidden>
     <div id="ticks" class="ticks"></div>
     <div id="goalLbl" class="goal-lbl"></div>
     <div id="zones" class="zones" hidden></div>
   </div>
   <div class="mtiles">
-    <div class="mtile">
+    <div class="mtile" data-m="p" role="button">
       <div class="mt-label">Protein</div>
       <div class="mt-val" id="tvP">0<span>g</span></div>
       <div class="mt-bar"><i id="tbP"></i></div>
       <div class="mt-sub" id="tsP">0% kcal</div>
     </div>
-    <div class="mtile">
+    <div class="mtile" data-m="c" role="button">
       <div class="mt-label">Carbs</div>
       <div class="mt-val" id="tvC">0<span>g</span></div>
       <div class="mt-bar"><i id="tbC"></i></div>
       <div class="mt-sub" id="tsC">0% kcal</div>
     </div>
-    <div class="mtile">
+    <div class="mtile" data-m="f" role="button">
       <div class="mt-label">Fat</div>
       <div class="mt-val" id="tvF">0<span>g</span></div>
       <div class="mt-bar"><i id="tbF"></i></div>
@@ -454,7 +484,7 @@ select{-webkit-appearance:none; appearance:none;
   <div class="week" id="weekPanel">
     <div class="wk-head"><span id="wkLbl">Last 7 days</span><button class="wk-trends" id="wkTrends">Trends &rsaquo;</button></div>
     <svg class="wk-chart" id="wkChart" viewBox="0 0 340 146" role="img" aria-label="Calories eaten and burned, last 7 days"></svg>
-    <div class="wk-legend"><span><i class="k-eat"></i>eaten</span><span><i class="k-burn"></i>burned</span><span><i class="k-zone"></i>500-1,000 under</span></div>
+    <div class="wk-legend" id="wkLegend"></div>
     <div class="wk-sum" id="wkSum"></div>
   </div>
   <div class="ins" id="insPanel" hidden>
@@ -655,6 +685,72 @@ select{-webkit-appearance:none; appearance:none;
         </div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ======== breakdown sheet ======== -->
+<div id="bdSheet" class="sheet">
+  <div class="sheet-card">
+    <div class="sheet-title">
+      <h2 id="bdTitle">Protein</h2>
+      <button id="bdClose" class="icon-btn" aria-label="Close">
+        <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="bd-tot" id="bdTot"></div>
+    <div class="eyebrow">By meal</div>
+    <div id="bdMeals"></div>
+    <div class="eyebrow">By food</div>
+    <div id="bdFoods"></div>
+  </div>
+</div>
+
+<!-- ======== dashboard sheet ======== -->
+<div id="dashSheet" class="sheet">
+  <div class="sheet-card">
+    <div class="sheet-title">
+      <h2>Dashboard</h2>
+      <div class="range-toggle">
+        <button data-n="14">14d</button>
+        <button data-n="30" class="on">30d</button>
+        <button data-n="90">90d</button>
+      </div>
+      <button id="dashClose" class="icon-btn" aria-label="Close dashboard">
+        <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="ins-grid" id="dashTiles" style="margin-top:0"></div>
+    <div class="eyebrow">Eaten vs burned</div>
+    <svg class="wk-chart" id="dashChart" viewBox="0 0 340 146" role="img" aria-label="Calories eaten and burned by day"></svg>
+    <div class="wk-legend" id="dashLegend"></div>
+    <div class="dz" id="dashZones"></div>
+    <div class="eyebrow">Top calorie sources</div>
+    <div id="dashFoodsK"></div>
+    <div class="eyebrow">Top protein sources</div>
+    <div id="dashFoodsP"></div>
+  </div>
+</div>
+
+<!-- ======== suggestions sheet ======== -->
+<div id="sugSheet" class="sheet">
+  <div class="sheet-card">
+    <div class="sheet-title">
+      <h2>Suggestions</h2>
+      <button id="sugClose" class="icon-btn" aria-label="Close suggestions">
+        <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="set-note" id="sugIntro" style="margin-top:-8px"></div>
+    <div class="eyebrow">For the rest of today</div>
+    <div id="sugToday"></div>
+    <button id="sugAsk" class="ghost small">Ask Claude for meal ideas</button>
+    <div id="sugIdeas"></div>
+    <div class="eyebrow">What your good days have in common</div>
+    <div id="sugTips"></div>
+    <div class="eyebrow">Meals that work for you</div>
+    <div id="sugMeals"></div>
+    <div class="eyebrow">Watch out for</div>
+    <div id="sugWatch"></div>
   </div>
 </div>
 
@@ -901,9 +997,11 @@ function tc(){
   const light = document.documentElement.dataset.theme !== 'dark';
   return light
     ? { ink:'38,36,32',    text:'#262420', ash:'#8A8476', flame:'#E07B00',
-        goalDash:'rgba(138,132,118,.7)', flameBar:'rgba(224,123,0,.5)', flameSoft:'#EDB878' }
+        goalDash:'rgba(138,132,118,.7)', flameBar:'rgba(224,123,0,.5)', flameSoft:'#EDB878',
+        z:{ fast:'#2F7D50', lose:'#58A86B', maint:'#E1A12A', over:'#D2452F' } }
     : { ink:'242,239,233', text:'#F2EFE9', ash:'#8E897D', flame:'#FFA53D',
-        goalDash:'rgba(142,137,125,.6)', flameBar:'rgba(255,165,61,.45)', flameSoft:'#9C6630' };
+        goalDash:'rgba(142,137,125,.6)', flameBar:'rgba(255,165,61,.45)', flameSoft:'#9C6630',
+        z:{ fast:'#46A870', lose:'#7FCB8E', maint:'#F0BC4C', over:'#F06A52' } };
 }
 
 let toastT = null;
@@ -1388,8 +1486,8 @@ function renderInsights(st, log, days){
   }
 
   /* Days landing in the 500-1000 under zone. */
-  const inZone = full.filter(r => r.kcal <= r.burn - aim.min && r.kcal >= Math.max(floor, r.burn - aim.max)).length;
-  tiles.push(tile('Days in the zone', inZone, '/ ' + full.length, nf.format(aim.min) + '-' + nf.format(aim.max) + ' under'));
+  const inZone = full.filter(r => r.kcal <= r.burn - aim.min).length;
+  tiles.push(tile('Lose zone days', inZone, '/ ' + full.length, nf.format(aim.min) + '+ under'));
 
   /* Protein. */
   const pg = Number(st.pgoal) || 0;
@@ -1443,23 +1541,79 @@ function renderInsights(st, log, days){
 
 /* Last 7 days: a column for what you ate, a line for what you burned, and a
    shaded band for the 500-1000 under zone. Tap a day to open it. */
-function renderWeekChart(st, log, days){
-  const c = tc();
-  const exlog = getEx();
+/* Zones for a day: Lose fast (at or under the larger deficit), Lose (500-1000
+   under), Small deficit (under burn by less than 500), Over (above burn). */
+function dayZones(st, burn){
   const aim = deficitAim(st);
   const floor = st.sex === 'f' ? 1200 : 1500;
-  const rows = days.map(d => {
-    const eaten = dayTotals(log, d).kcal;
-    const burn = dayBurnInfo(st, d, dayBurn(exlog, d)).burn;
-    return { d: d, eaten: eaten, logged: (log[d] || []).length > 0, burn: burn,
-             zLo: burn ? Math.max(floor, burn - aim.max) : 0, zHi: burn ? burn - aim.min : 0 };
+  return { lo: Math.max(floor, burn - aim.max), hi: burn - aim.min, burn: burn, gain: burn + 300 };
+}
+function zoneOf(eaten, z){ return eaten <= z.lo ? 'fast' : eaten <= z.hi ? 'lose' : eaten <= z.burn ? 'maint' : 'over'; }
+const ZONE_LBL = { fast: 'Lose fast', lose: 'Lose', maint: 'Small deficit', over: 'Over burned' };
+function zoneLegend(){
+  const z = tc().z;
+  return ['fast', 'lose', 'maint', 'over'].map(k => '<span><i style="width:9px;height:9px;border-radius:2px;background:' + z[k] + '"></i>' +
+    ZONE_LBL[k] + '</span>').join('') + '<span><i class="k-burn"></i>burned</span>';
+}
+/* Horizontal gauge under the day's number: coloured zones, filled up to what has been eaten. */
+function zoneGauge(eaten, z){
+  const c = tc(), zc = c.z;
+  const max = Math.max(z.gain, eaten * 1.04, 1);
+  const W = 340, x = v => Math.max(0, Math.min(W, v / max * W));
+  const segs = [['fast', 0, z.lo], ['lose', z.lo, z.hi], ['maint', z.hi, z.burn], ['over', z.burn, max]];
+  let g = '<svg viewBox="0 0 340 24" preserveAspectRatio="none" aria-hidden="true">' +
+    '<defs><clipPath id="gclip"><rect x="0" y="7" width="340" height="12" rx="6"/></clipPath></defs><g clip-path="url(#gclip)">';
+  segs.forEach(sg => {
+    const x0 = x(sg[1]), x1 = x(sg[2]);
+    if (x1 <= x0) return;
+    g += '<rect x="' + x0.toFixed(1) + '" y="7" width="' + (x1 - x0).toFixed(1) + '" height="12" fill="' + zc[sg[0]] + '" fill-opacity=".22"/>';
+    const f1 = Math.min(x1, x(eaten));
+    if (f1 > x0) g += '<rect x="' + x0.toFixed(1) + '" y="7" width="' + (f1 - x0).toFixed(1) + '" height="12" fill="' + zc[sg[0]] + '"/>';
   });
+  /* 2px surface gaps between zones */
+  [z.lo, z.hi, z.burn].forEach(v => { if (x(v) > 0 && x(v) < W) g += '<rect x="' + (x(v) - 1).toFixed(1) + '" y="7" width="2" height="12" fill="var(--iron)"/>'; });
+  g += '</g>';
+  const mx = x(eaten);
+  g += '<path d="M' + (mx - 4.5).toFixed(1) + ' 0 L' + (mx + 4.5).toFixed(1) + ' 0 L' + mx.toFixed(1) + ' 6 Z" fill="' + c.text + '"/>';
+  return g + '</svg>';
+}
+function insTile(label, val, unit, sub){
+  return '<div class="ins-t"><div class="mt-label">' + label + '</div>' +
+    '<div class="mt-val">' + val + (unit ? '<span> ' + unit + '</span>' : '') + '</div>' +
+    '<div class="mt-sub">' + sub + '</div></div>';
+}
+function foodKey(name){
+  return String(name || '').toLowerCase().replace(/\(.*?\)/g, '').replace(/\b\d+(\.\d+)?\s*(g|ml|kg|l|x)?\b/g, '')
+    .replace(/\b(slices?|pieces?|serves?|cooked|seasoned)\b/g, '').replace(/[^a-z0-9& ]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+/* Per-day facts shared by the charts, dashboard and suggestions. */
+function dayFacts(st, log, exlog, d){
+  const t = dayTotals(log, d);
+  const burn = dayBurnInfo(st, d, dayBurn(exlog, d)).burn;
+  const meals = log[d] || [];
+  const z = burn ? dayZones(st, burn) : null;
+  return { d: d, kcal: t.kcal, p: t.p, c: t.c, f: t.f, burn: burn, meals: meals, logged: meals.length > 0,
+           z: z, zone: z ? zoneOf(t.kcal, z) : '', under: burn ? burn - t.kcal : 0 };
+}
+function renderWeekChart(st, log, days){
+  renderZoneChart($('#wkChart'), st, log, days, true);
+  $('#wkLegend').innerHTML = zoneLegend();
+}
+/* Columns coloured by the zone each day landed in, over faint zone bands,
+   with the burned line on top. Works for 7 to 90 days. */
+function renderZoneChart(el, st, log, days, tappable){
+  const c = tc(), zc = c.z;
+  const exlog = getEx();
+  const rows = days.map(d => dayFacts(st, log, exlog, d));
+  const n = days.length;
   const L = 30, R = 336, T = 8, B = 120;
   let top = 1000;
-  rows.forEach(r => { top = Math.max(top, r.eaten, r.burn); });
+  rows.forEach(r => { top = Math.max(top, r.kcal, r.burn ? r.burn + 300 : 0); });
   top = Math.ceil(top / 1000) * 1000;
-  const y = v => B - (v / top) * (B - T);
-  const slot = (R - L) / 7;
+  const y = v => B - (Math.max(0, Math.min(top, v)) / top) * (B - T);
+  const slot = (R - L) / n;
+  const bw = Math.max(2.5, Math.min(16, slot * 0.55)), zw = Math.min(30, slot * 0.92);
   let svg = '';
   for (let v = 1000; v <= top; v += 1000) {
     svg += '<line x1="' + L + '" x2="' + R + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) +
@@ -1470,52 +1624,329 @@ function renderWeekChart(st, log, days){
   svg += '<line x1="' + L + '" x2="' + R + '" y1="' + B + '" y2="' + B + '" stroke="rgba(' + c.ink + ',.18)" stroke-width="1"/>';
   rows.forEach((r, i) => {
     const cx = L + slot * i + slot / 2;
-    const sel = r.d === viewDate;
-    if (r.burn) {
-      const zw = 30;
-      svg += '<rect x="' + (cx - zw / 2).toFixed(1) + '" y="' + y(r.zHi).toFixed(1) + '" width="' + zw +
-        '" height="' + Math.max(1, y(r.zLo) - y(r.zHi)).toFixed(1) + '" rx="3" fill="' + c.flame + '" fill-opacity=".16"/>';
+    const sel = tappable && r.d === viewDate;
+    if (r.burn && r.logged) {
+      const band = (from, to, col, op) => {
+        if (to <= from) return '';
+        return '<rect x="' + (cx - zw / 2).toFixed(1) + '" y="' + y(to).toFixed(1) + '" width="' + zw.toFixed(1) +
+          '" height="' + Math.max(1, y(from) - y(to)).toFixed(1) + '" fill="' + col + '" fill-opacity="' + op + '"/>';
+      };
+      svg += band(r.z.lo, r.z.hi, zc.lose, '.2') + band(r.z.hi, r.z.burn, zc.maint, '.16') + band(r.z.burn, r.z.burn + 300, zc.over, '.12');
     }
-    if (r.logged && r.eaten > 0) {
-      const w = 16, x0 = cx - w / 2, yt = y(r.eaten), h = B - yt, rr = Math.min(4, h);
+    if (r.logged && r.kcal > 0) {
+      const w = bw, x0 = cx - w / 2, yt = y(r.kcal), h = B - yt, rr = Math.min(n > 30 ? 1.5 : 4, h);
+      const col = r.zone ? zc[r.zone] : c.flame;
       svg += '<path d="M' + x0.toFixed(1) + ' ' + B + 'V' + (yt + rr).toFixed(1) +
         'Q' + x0.toFixed(1) + ' ' + yt.toFixed(1) + ' ' + (x0 + rr).toFixed(1) + ' ' + yt.toFixed(1) +
         'H' + (x0 + w - rr).toFixed(1) + 'Q' + (x0 + w).toFixed(1) + ' ' + yt.toFixed(1) + ' ' + (x0 + w).toFixed(1) + ' ' + (yt + rr).toFixed(1) +
-        'V' + B + 'Z" fill="' + (sel ? c.flame : c.flameSoft) + '"/>';
+        'V' + B + 'Z" fill="' + col + '"/>';
     }
     if (r.burn) {
-      svg += '<line x1="' + (cx - 15).toFixed(1) + '" x2="' + (cx + 15).toFixed(1) + '" y1="' + y(r.burn).toFixed(1) +
+      const hw = Math.min(15, slot * 0.46);
+      svg += '<line x1="' + (cx - hw).toFixed(1) + '" x2="' + (cx + hw).toFixed(1) + '" y1="' + y(r.burn).toFixed(1) +
         '" y2="' + y(r.burn).toFixed(1) + '" stroke="' + c.text + '" stroke-width="2" stroke-linecap="round"/>';
     }
-    const lb = new Date(r.d + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'narrow' });
-    svg += '<text x="' + cx.toFixed(1) + '" y="136" text-anchor="middle" font-size="9" font-family="IBM Plex Mono, monospace" fill="' +
-      (sel ? c.text : c.ash) + '"' + (sel ? ' font-weight="600"' : '') + '>' + lb + '</text>';
-    if (sel) svg += '<rect x="' + (cx - 8).toFixed(1) + '" y="141" width="16" height="2" rx="1" fill="' + c.flame + '"/>';
-    svg += '<rect class="hit" data-day="' + r.d + '" x="' + (L + slot * i).toFixed(1) + '" y="0" width="' + slot.toFixed(1) +
-      '" height="146" fill="transparent"><title>' + esc(dateLabel(r.d)) + ': ate ' + nf.format(r0(r.eaten)) +
-      (r.burn ? ', burned ' + nf.format(r0(r.burn)) : '') + '</title></rect>';
+    const dd = new Date(r.d + 'T12:00:00');
+    const every = n <= 7 ? 1 : n <= 14 ? 2 : n <= 30 ? 5 : 14;
+    if (i % every === 0 || i === n - 1) {
+      const lb = n <= 7 ? dd.toLocaleDateString('en-AU', { weekday: 'narrow' }) : String(dd.getDate());
+      svg += '<text x="' + cx.toFixed(1) + '" y="136" text-anchor="middle" font-size="9" font-family="IBM Plex Mono, monospace" fill="' +
+        (sel ? c.text : c.ash) + '"' + (sel ? ' font-weight="600"' : '') + '>' + lb + '</text>';
+    }
+    if (sel) svg += '<rect x="' + (cx - 8).toFixed(1) + '" y="141" width="16" height="2" rx="1" fill="' + c.text + '"/>';
+    svg += '<rect class="hit" ' + (tappable ? 'data-day="' + r.d + '" ' : '') + 'x="' + (L + slot * i).toFixed(1) + '" y="0" width="' + slot.toFixed(1) +
+      '" height="146" fill="transparent"><title>' + esc(dateLabel(r.d)) + ': ate ' + nf.format(r0(r.kcal)) +
+      (r.burn ? ', burned ' + nf.format(r0(r.burn)) + (r.logged ? ' (' + ZONE_LBL[r.zone] + ')' : '') : '') + '</title></rect>';
   });
-  $('#wkChart').innerHTML = svg;
+  el.innerHTML = svg;
+  if (!tappable) return rows;
 
   /* Selected day, then the average over full logged days (today is still in progress). */
   const cur = rows.find(r => r.d === viewDate);
   let sum = '';
   if (cur && cur.burn) {
-    const u = cur.burn - cur.eaten;
-    sum += esc(dateLabel(cur.d)) + ': ate <b>' + nf.format(r0(cur.eaten)) + '</b> &middot; burned <b>' +
+    const u = cur.under;
+    sum += esc(dateLabel(cur.d)) + ': ate <b>' + nf.format(r0(cur.kcal)) + '</b> &middot; burned <b>' +
       nf.format(r0(cur.burn)) + '</b> &middot; ' + (u >= 0 ? nf.format(r0(u)) + ' under' : nf.format(r0(-u)) + ' over');
   }
   const full = rows.filter(r => r.logged && r.burn && r.d !== todayISO());
   if (full.length) {
-    const avgU = full.reduce((a, r) => a + (r.burn - r.eaten), 0) / full.length;
-    const avgE = full.reduce((a, r) => a + r.eaten, 0) / full.length;
+    const avgU = full.reduce((a, r) => a + r.under, 0) / full.length;
+    const avgE = full.reduce((a, r) => a + r.kcal, 0) / full.length;
     const kg = avgU * 7 / 7700;
     sum += (sum ? '<br>' : '') + 'Avg of ' + full.length + ' full day' + (full.length === 1 ? '' : 's') + ': ate <b>' +
       nf.format(r0(avgE)) + '</b> &middot; ' + (avgU >= 0 ? nf.format(r0(avgU)) + ' under' : nf.format(r0(-avgU)) + ' over') +
       ' &middot; <b>' + (kg >= 0 ? '&minus;' : '+') + r1(Math.abs(kg)) + ' kg/wk</b> pace';
   }
   $('#wkSum').innerHTML = sum || 'Log a few days to see your pace.';
+  return rows;
 }
+
+/* ================= breakdown: where a day's calories or macros come from ================= */
+const MACRO = { kcal: ['Calories', 'kcal', 'kcal'], p: ['Protein', 'p', 'g'], c: ['Carbs', 'c', 'g'], f: ['Fat', 'f', 'g'] };
+function openBreakdown(m){
+  const spec = MACRO[m];
+  if (!spec) return;
+  const key = spec[1], unit = spec[2];
+  const meals = getLog()[viewDate] || [];
+  const total = meals.reduce((a, ml) => a + ml.items.reduce((b, i) => b + (Number(i[key]) || 0), 0), 0);
+  const fmt = v => unit === 'kcal' ? nf.format(r0(v)) + ' kcal' : r0(v) + ' g';
+  $('#bdTitle').textContent = spec[0] + ' · ' + dateLabel(viewDate);
+  const st = getSettings();
+  const goalTxt = m === 'p' && Number(st.pgoal) ? ' of your ' + st.pgoal + ' g goal' : '';
+  $('#bdTot').innerHTML = '<b>' + fmt(total) + '</b>' + goalTxt;
+  const row = (name, sub, v) => '<div class="bd-row"><div class="bd-top"><span>' + esc(name) + '</span><b>' + fmt(v) + '</b></div>' +
+    '<div class="bd-sub">' + sub + (total > 0 ? ' &middot; ' + r0(100 * v / total) + '%' : '') + '</div>' +
+    '<div class="bd-bar"><i style="width:' + (total > 0 ? Math.max(1, 100 * v / total) : 0).toFixed(1) + '%"></i></div></div>';
+  const byMeal = meals.map(ml => ({ name: ml.name, time: ml.time, v: ml.items.reduce((b, i) => b + (Number(i[key]) || 0), 0) }))
+    .sort((a, b) => b.v - a.v);
+  $('#bdMeals').innerHTML = byMeal.length ? byMeal.map(x => row(x.name, esc(x.time || ''), x.v)).join('')
+    : '<div class="prod-note">Nothing logged on this day.</div>';
+  const foods = {};
+  meals.forEach(ml => ml.items.forEach(i => {
+    const k = foodKey(i.name) || 'item';
+    const f = foods[k] = foods[k] || { name: cap(k), v: 0, g: 0 };
+    f.v += Number(i[key]) || 0; f.g += Number(i.grams) || 0;
+  }));
+  const list = Object.values(foods).filter(f => f.v > 0).sort((a, b) => b.v - a.v);
+  $('#bdFoods').innerHTML = list.length ? list.map(f => row(f.name, r0(f.g) + ' g eaten', f.v)).join('')
+    : '<div class="prod-note">Nothing yet.</div>';
+  $('#bdSheet').classList.add('open');
+}
+$('.readout').addEventListener('click', e => {
+  const t = e.target.closest('[data-m]');
+  if (t) openBreakdown(t.dataset.m);
+});
+$('#bdClose').addEventListener('click', () => $('#bdSheet').classList.remove('open'));
+$('#bdSheet').addEventListener('click', e => { if (e.target === e.currentTarget) $('#bdSheet').classList.remove('open'); });
+
+/* ================= dashboard ================= */
+let dashN = 30;
+function renderDashboard(){
+  const st = getSettings(), log = getLog();
+  const today = todayISO();
+  const days = lastNDaysEnding(today, dashN);
+  const rows = renderZoneChart($('#dashChart'), st, log, days, false);
+  $('#dashLegend').innerHTML = zoneLegend();
+  const full = rows.filter(r => r.logged && r.d !== today);
+  const withBurn = full.filter(r => r.burn);
+  const avg = (arr, f) => arr.length ? arr.reduce((a, r) => a + f(r), 0) / arr.length : 0;
+  const banked = withBurn.reduce((a, r) => a + r.under, 0);
+  const pace = avg(withBurn, r => r.under) * 7 / 7700;
+  const pg = Number(st.pgoal) || 0;
+  const counts = { fast: 0, lose: 0, maint: 0, over: 0 };
+  withBurn.forEach(r => counts[r.zone]++);
+  const w = getWeights(), wk = Object.keys(w).filter(d => d >= days[0]).sort();
+  const tiles = [
+    insTile('Days logged', full.length, '/ ' + (dashN - 1), 'full days in range'),
+    insTile('Avg eaten', nf.format(r0(avg(full, r => r.kcal))), 'kcal', 'protein ' + r0(avg(full, r => r.p)) + ' g'),
+    insTile('Avg burned', nf.format(r0(avg(withBurn, r => r.burn))), 'kcal', 'Garmin where synced'),
+    insTile('Avg deficit', nf.format(r0(avg(withBurn, r => r.under))), 'kcal', (pace >= 0 ? '&minus;' : '+') + r1(Math.abs(pace)) + ' kg/wk pace'),
+    insTile('Fat lost (est.)', r1(Math.max(0, banked) / 7700), 'kg', nf.format(r0(banked)) + ' kcal under'),
+    insTile('Lose zone days', counts.fast + counts.lose, '/ ' + withBurn.length, '500+ under'),
+    pg ? insTile('Protein goal hit', full.filter(r => r.p >= pg).length, '/ ' + full.length, pg + ' g a day')
+       : insTile('Avg protein', r0(avg(full, r => r.p)), 'g', 'set a goal in You'),
+    wk.length > 1
+      ? insTile('Weight change', (w[wk[wk.length - 1]] - w[wk[0]] >= 0 ? '+' : '&minus;') + r1(Math.abs(w[wk[wk.length - 1]] - w[wk[0]])), 'kg',
+          r1(w[wk[0]]) + ' &rarr; ' + r1(w[wk[wk.length - 1]]) + ' kg')
+      : insTile('Weight change', '&ndash;', '', 'weigh in to see it')
+  ];
+  $('#dashTiles').innerHTML = tiles.join('');
+  const zc = tc().z;
+  $('#dashZones').innerHTML = ['fast', 'lose', 'maint', 'over'].map(k => '<span><i class="zd" style="background:' + zc[k] + '"></i>' +
+    ZONE_LBL[k] + ' <b>' + counts[k] + '</b></span>').join('');
+  const top = (key, unit) => {
+    const by = {}; let all = 0;
+    days.forEach(d => (log[d] || []).forEach(ml => ml.items.forEach(i => {
+      const k = foodKey(i.name); if (!k) return;
+      by[k] = (by[k] || 0) + (Number(i[key]) || 0); all += Number(i[key]) || 0;
+    })));
+    const ks = Object.keys(by).filter(k => by[k] > 0).sort((a, b) => by[b] - by[a]).slice(0, 6);
+    if (!ks.length) return '<div class="prod-note">Nothing logged in this range.</div>';
+    return ks.map(k => '<div class="bd-row"><div class="bd-top"><span>' + esc(cap(k)) + '</span><b>' +
+      (unit === 'kcal' ? nf.format(r0(by[k])) + ' kcal' : r0(by[k]) + ' g') + '</b></div>' +
+      '<div class="bd-sub">' + r0(100 * by[k] / all) + '% of the total</div>' +
+      '<div class="bd-bar"><i style="width:' + (100 * by[k] / by[ks[0]]).toFixed(1) + '%"></i></div></div>').join('');
+  };
+  $('#dashFoodsK').innerHTML = top('kcal', 'kcal');
+  $('#dashFoodsP').innerHTML = top('p', 'g');
+}
+$('#dashBtn').addEventListener('click', () => { $('#dashSheet').classList.add('open'); renderDashboard(); });
+$('#dashClose').addEventListener('click', () => $('#dashSheet').classList.remove('open'));
+$('#dashSheet').addEventListener('click', e => {
+  if (e.target === e.currentTarget) { $('#dashSheet').classList.remove('open'); return; }
+  const b = e.target.closest('[data-n]');
+  if (!b) return;
+  dashN = Number(b.dataset.n);
+  $$('#dashSheet [data-n]').forEach(x => x.classList.toggle('on', x === b));
+  renderDashboard();
+});
+
+/* ================= suggestions, learned from your good days ================= */
+let sugCache = [];
+function mealKey(m){ return foodKey(m.name) || foodKey((m.items[0] || {}).name); }
+function renderSuggestions(){
+  const st = getSettings(), log = getLog(), exlog = getEx();
+  const today = todayISO();
+  const pg = Number(st.pgoal) || 0;
+  const rows = lastNDaysEnding(today, 60).filter(d => d !== today && (log[d] || []).length)
+    .map(d => dayFacts(st, log, exlog, d)).filter(r => r.burn && r.kcal >= 900);
+  /* A good day: a full day logged that landed in a lose zone, close to the protein goal if one is set. */
+  const isGood = r => (r.zone === 'lose' || r.zone === 'fast') && (!pg || r.p >= pg * 0.85);
+  const good = rows.filter(isGood), rest = rows.filter(r => !isGood(r));
+  const over = rows.filter(r => r.zone === 'over' || r.zone === 'maint');
+  $('#sugIntro').innerHTML = rows.length
+    ? 'From your last 60 days: <b>' + good.length + '</b> good day' + (good.length === 1 ? '' : 's') + ' out of ' + rows.length +
+      '. A good day is 500+ under what you burned' + (pg ? ' with protein near ' + pg + ' g' : '') + '.'
+    : 'Log a few full days and suggestions will appear here.';
+
+  /* Foods that make up much more of the over days than the good days. */
+  const share = arr => {
+    const by = {}; let all = 0;
+    arr.forEach(r => r.meals.forEach(m => m.items.forEach(i => {
+      const k = foodKey(i.name); if (!k) return;
+      by[k] = (by[k] || 0) + (Number(i.kcal) || 0); all += Number(i.kcal) || 0;
+    })));
+    const out = {};
+    Object.keys(by).forEach(k => { out[k] = { kcal: by[k], pct: all ? by[k] / all : 0 }; });
+    return out;
+  };
+  const so = share(over), sgd = share(good);
+  const watch = Object.keys(so).map(k => ({ k: k, d: so[k].pct - ((sgd[k] && sgd[k].pct) || 0), kcal: so[k].kcal / Math.max(1, over.length) }))
+    .filter(x => x.d > 0.04).sort((a, b) => b.d - a.d).slice(0, 4);
+  $('#sugWatch').innerHTML = watch.length ? watch.map(x => '<div class="bd-row"><div class="bd-top"><span>' + esc(cap(x.k)) + '</span><b>+' +
+    r0(100 * x.d) + ' pts</b></div><div class="bd-sub">bigger share of calories on over days than on good days &middot; about ' +
+    nf.format(r0(x.kcal)) + ' kcal on those days</div></div>').join('')
+    : '<div class="prod-note">Nothing stands out yet.</div>';
+  const watchKeys = new Set(watch.map(x => x.k));
+  /* Meals from good days: most often eaten first, then best protein for the calories.
+     Anything flagged in "Watch out for" is left out. */
+  const byMeal = {};
+  good.forEach(r => r.meals.forEach(m => {
+    const k = mealKey(m); if (!k) return;
+    if (m.items.some(i => watchKeys.has(foodKey(i.name)))) return;
+    const t = sumItems(m.items);
+    const e = byMeal[k] = byMeal[k] || { name: m.name, n: 0, kcal: 0, p: 0, last: m, lastDay: r.d };
+    e.n++; e.kcal += t.kcal; e.p += t.p;
+    if (r.d >= e.lastDay) { e.last = m; e.lastDay = r.d; e.name = m.name; }
+  }));
+  const works = Object.values(byMeal).map(e => Object.assign(e, { kcal: e.kcal / e.n, p: e.p / e.n }))
+    .sort((a, b) => (b.n - a.n) || (b.p / Math.max(1, b.kcal) - a.p / Math.max(1, a.kcal)));
+  sugCache = works;
+  const card = (e, i) => '<div class="sg-card"><div class="sg-top"><div><div class="sg-name">' + esc(e.name) + '</div>' +
+    '<div class="sg-sub">' + nf.format(r0(e.kcal)) + ' kcal &middot; ' + r0(e.p) + ' g protein' +
+    (e.n > 1 ? ' &middot; on ' + e.n + ' good days' : '') + '</div></div>' +
+    '<button class="ghost sg-log" data-sug="' + i + '">Log</button></div></div>';
+  $('#sugMeals').innerHTML = works.length ? works.slice(0, 6).map(card).join('')
+    : '<div class="prod-note">No good days yet. Once a day lands 500+ under, its meals show up here.</div>';
+
+  /* What fits the rest of today. */
+  const tf = dayFacts(st, log, exlog, today);
+  let html = '';
+  if (tf.burn) {
+    const left = tf.z.hi - tf.kcal;
+    const pLeft = pg ? Math.max(0, pg - tf.p) : 0;
+    html += '<div class="set-note" style="margin:0">You can eat about <b>' + nf.format(Math.max(0, r0(left))) + ' kcal</b> more today and stay in the Lose zone' +
+      (pg ? ', and you need <b>' + r0(pLeft) + ' g</b> more protein' : '') + '.</div>';
+    const fits = works.map((e, i) => ({ e: e, i: i })).filter(x => x.e.kcal <= left + 50)
+      .sort((a, b) => b.e.p - a.e.p).slice(0, 3);
+    html += fits.length ? fits.map(x => card(x.e, x.i)).join('')
+      : (left > 0 ? '<div class="prod-note">None of your usual good-day meals fit in what is left. Try a lean protein snack, or ask Claude below.</div>' : '');
+  } else {
+    html = '<div class="prod-note">Fill in your details in You to get a daily target.</div>';
+  }
+  $('#sugToday').innerHTML = html;
+
+  /* Patterns: compare good days with the rest. */
+  const avg = (arr, f) => arr.length ? arr.reduce((a, r) => a + f(r), 0) / arr.length : 0;
+  const tips = [];
+  if (good.length) {
+    tips.push('Your good days average <b>' + nf.format(r0(avg(good, r => r.kcal))) + ' kcal</b> and <b>' + r0(avg(good, r => r.p)) + ' g protein</b>' +
+      (rest.length ? ', against ' + nf.format(r0(avg(rest, r => r.kcal))) + ' kcal and ' + r0(avg(rest, r => r.p)) + ' g on other days.' : '.'));
+    const firstP = arr => avg(arr, r => { const m = r.meals.slice().sort((a, b) => (a.time < b.time ? -1 : 1))[0]; return m ? sumItems(m.items).p : 0; });
+    if (rest.length && firstP(good) - firstP(rest) > 8) {
+      tips.push('You start good days with more protein: <b>' + r0(firstP(good)) + ' g</b> in your first meal, against ' + r0(firstP(rest)) + ' g on other days.');
+    }
+    const late = arr => avg(arr, r => r.meals.filter(m => (m.time || '') >= '20:00').reduce((a, m) => a + sumItems(m.items).kcal, 0));
+    if (rest.length && late(rest) - late(good) > 150) {
+      tips.push('Other days have about <b>' + nf.format(r0(late(rest) - late(good))) + ' kcal more after 8pm</b>. Evening eating is where most of the difference is.');
+    }
+    const burnDiff = avg(good, r => r.burn) - avg(rest, r => r.burn);
+    if (rest.length && burnDiff > 200) {
+      tips.push('Good days burn <b>' + nf.format(r0(burnDiff)) + ' kcal more</b> on average, so moving more is helping as much as eating less.');
+    }
+    const mealsN = arr => avg(arr, r => r.meals.length);
+    if (rest.length && Math.abs(mealsN(good) - mealsN(rest)) >= 0.7) {
+      tips.push('You log <b>' + r1(mealsN(good)) + ' meals</b> on good days and ' + r1(mealsN(rest)) + ' on other days.');
+    }
+  }
+  if (pg && rows.length && avg(rows, r => r.p) < pg * 0.8) {
+    tips.push('Protein is averaging <b>' + r0(avg(rows, r => r.p)) + ' g</b>, short of your ' + pg + ' g goal. A shake or a chicken lunch most days closes the gap.');
+  }
+  $('#sugTips').innerHTML = tips.length ? tips.map(t => '<div class="sg-tip">' + t + '</div>').join('')
+    : '<div class="prod-note">Patterns appear once you have a few good days and a few other days to compare.</div>';
+
+}
+function logSuggestion(i){
+  const e = sugCache[i];
+  if (!e) return;
+  const clone = JSON.parse(JSON.stringify(e.last));
+  clone.id = uid(); clone.u = Date.now(); clone.time = nowHM();
+  const log = getLog();
+  (log[viewDate] = log[viewDate] || []).push(clone);
+  setLog(log);
+  renderDay();
+  renderSuggestions();
+  toast('Logged ' + clone.name + (viewDate === todayISO() ? '' : ' to ' + dateLabel(viewDate)));
+}
+const SUGSYS = `You suggest simple meals for an Australian user who is trying to lose fat while eating plenty of protein.
+Rules:
+1. Fit inside the calories and protein given. Aim for high protein per calorie.
+2. Base ideas on the foods the user already eats (listed). Avoid food types that never appear in their history, for example seafood if none is listed.
+3. Keep them easy: microwave, air fryer or a quick stovetop meal, with ingredients from Coles or Woolworths.
+4. Give realistic calories and protein for one serve.
+Respond with ONLY a single JSON object in the requested shape.`;
+const SUG_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['ideas'],
+  properties: { ideas: { type: 'array', items: {
+    type: 'object', additionalProperties: false, required: ['name', 'why', 'kcal', 'protein_g'],
+    properties: { name: { type: 'string' }, why: { type: 'string' }, kcal: { type: 'number' }, protein_g: { type: 'number' } }
+  } } }
+};
+$('#sugAsk').addEventListener('click', async () => {
+  const st = getSettings(), log = getLog(), exlog = getEx();
+  const tf = dayFacts(st, log, exlog, todayISO());
+  const left = tf.burn ? Math.max(0, r0(tf.z.hi - tf.kcal)) : 600;
+  const pg = Number(st.pgoal) || 0;
+  const foods = {};
+  lastNDaysEnding(todayISO(), 30).forEach(d => (log[d] || []).forEach(m => m.items.forEach(i => {
+    const k = foodKey(i.name); if (k) foods[k] = (foods[k] || 0) + 1;
+  })));
+  const usual = Object.keys(foods).sort((a, b) => foods[b] - foods[a]).slice(0, 25).join(', ');
+  const btn = $('#sugAsk');
+  btn.disabled = true; btn.textContent = 'Thinking...';
+  try {
+    const msg = 'Calories left today: ' + left + ' kcal.\n' + (pg ? 'Protein still needed: ' + r0(Math.max(0, pg - tf.p)) + ' g.\n' : '') +
+      'Time now: ' + nowHM() + '.\nFoods this user eats often: ' + (usual || 'unknown') + '.\nSuggest 3 meal or snack ideas.';
+    const j = sliceJSON(await apiCall(SUGSYS, [{ type: 'text', text: msg }], { effort: 'low', schema: SUG_SCHEMA }));
+    const ideas = Array.isArray(j.ideas) ? j.ideas.slice(0, 3) : [];
+    $('#sugIdeas').innerHTML = ideas.map(x => '<div class="sg-card"><div class="sg-name">' + esc(x.name) + '</div>' +
+      '<div class="sg-sub">about ' + nf.format(r0(x.kcal)) + ' kcal &middot; ' + r0(x.protein_g) + ' g protein</div>' +
+      '<div style="font-size:13.5px;line-height:1.5;margin-top:6px">' + esc(x.why) + '</div></div>').join('') ||
+      '<div class="prod-note">No ideas came back. Try again.</div>';
+  } catch(err) {
+    if (err.name !== 'AbortError') $('#sugIdeas').innerHTML = '<div class="inline-err">' + esc(err.message) + '</div>';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Ask Claude for meal ideas';
+  }
+});
+$('#sugBtn').addEventListener('click', () => { $('#sugIdeas').innerHTML = ''; $('#sugSheet').classList.add('open'); renderSuggestions(); });
+$('#sugClose').addEventListener('click', () => $('#sugSheet').classList.remove('open'));
+$('#sugSheet').addEventListener('click', e => {
+  if (e.target === e.currentTarget) { $('#sugSheet').classList.remove('open'); return; }
+  const b = e.target.closest('[data-sug]');
+  if (b) logSuggestion(Number(b.dataset.sug));
+});
 
 /* ================= favourites ================= */
 function renderFavRow(){
@@ -1628,10 +2059,8 @@ function renderDay(){
     const hi = burn - aim.min;
     const lo = Math.max(st.sex === 'f' ? 1200 : 1500, burn - aim.max);
     const eaten = tot.kcal, under = burn - eaten;
-    const T = 24, on = Math.max(0, Math.min(T, Math.round(T * eaten / Math.max(1, hi))));
-    let ticks = '';
-    for (let i = 0; i < T; i++) ticks += '<i class="' + (i < on ? 'on' : '') + '"></i>';
-    $('#ticks').innerHTML = ticks;
+    $('#ticks').className = 'gauge';
+    $('#ticks').innerHTML = zoneGauge(eaten, dayZones(st, burn));
     let burnTxt;
     if (info.src === 'garmin' && viewDate === todayISO()) {
       burnTxt = 'Garmin <b>' + nf.format(r0(info.so_far)) + '</b> burned so far &middot; about <b>' +
@@ -1645,11 +2074,12 @@ function renderDay(){
     $('#goalLbl').innerHTML = burnTxt + '<br>' + (under >= 0 ? nf.format(r0(under)) + ' under' : '<span class="over">' + nf.format(r0(-under)) + ' over</span>');
     /* One line per goal; targets move with the day's exercise. The highlighted
        line is the most ambitious goal you are still on track for. */
+    const zc = tc().z;
     const zones = [
-      ['Lose fast', lo],
-      ['Lose', hi],
-      ['Maintain', burn],
-      ['Gain', burn + 300]
+      ['Lose fast', lo, zc.fast],
+      ['Lose', hi, zc.lose],
+      ['Maintain', burn, zc.maint],
+      ['Gain', burn + 300, zc.over]
     ];
     const cur = zones.findIndex(z => eaten <= z[1]);
     $('#zones').hidden = false;
@@ -1657,13 +2087,14 @@ function renderDay(){
       const rate = (z[1] - burn) * 7 / 7700;
       const left = z[1] - eaten;
       return '<div class="zn' + (i === cur ? ' on' : '') + '">' +
-        '<span class="nm">' + z[0] + '</span><b>' + nf.format(r0(z[1])) + '</b>' +
+        '<span class="nm"><i class="zd" style="background:' + z[2] + '"></i>' + z[0] + '</span><b>' + nf.format(r0(z[1])) + '</b>' +
         '<span class="rt">' + (Math.abs(rate) < 0.05 ? '&plusmn;0' : (rate > 0 ? '+' : '&minus;') + r1(Math.abs(rate))) + ' kg/wk</span>' +
         '<span class="lf">' + (left >= 0 ? nf.format(r0(left)) + ' left' : '<span class="over">' + nf.format(r0(-left)) + ' over</span>') + '</span></div>';
     }).join('');
   } else if (goal > 0) {
     $('#zones').hidden = true;
     gw.hidden = false;
+    $('#ticks').className = 'ticks';
     const eff = goal + burned;
     const T = 24, on = Math.max(0, Math.min(T, Math.round(T * tot.kcal / eff)));
     let ticks = '';
@@ -1683,10 +2114,13 @@ function renderDay(){
 
   const favSet = new Set(getFavs().map(f => f.id));
   const list = $('#mealList');
+  /* Meals first; exercise sits in its own group because it raises the burned
+     line rather than taking calories off what you ate. */
   const rows = [];
-  meals.forEach(m => rows.push({ type: 'meal', t: m.time || '00:00', m: m }));
-  exs.forEach(x => rows.push({ type: 'ex', t: x.time || '00:00', m: x }));
-  rows.sort((a, b) => (a.t < b.t ? -1 : 1));
+  meals.slice().sort((a, b) => ((a.time || '') < (b.time || '') ? -1 : 1)).forEach(m => rows.push({ type: 'meal', m: m }));
+  const exSorted = exs.slice().sort((a, b) => ((a.time || '') < (b.time || '') ? -1 : 1));
+  if (exSorted.length) rows.push({ type: 'hd', garmin: info.src === 'garmin' });
+  exSorted.forEach(x => rows.push({ type: 'ex', m: x }));
 
   if (!rows.length) {
     list.innerHTML = '<div class="empty">Nothing logged ' +
@@ -1694,6 +2128,9 @@ function renderDay(){
     return;
   }
   list.innerHTML = rows.map(r => {
+    if (r.type === 'hd') {
+      return '<div class="act-hd">Activity &middot; ' + (r.garmin ? 'already counted in Garmin&rsquo;s burned total' : 'added to burned') + '</div>';
+    }
     if (r.type === 'ex') {
       const x = r.m;
       return '<div class="meal" role="button" tabindex="0" data-ex="' + x.id + '">' +
@@ -1702,7 +2139,7 @@ function renderDay(){
         '<div class="m-sub">' + esc(x.time || '') + (x.time ? ' &middot; ' : '') + r0(x.mins) + ' min' +
         (x.src === 'garmin' ? ' &middot; <span class="src garmin">Garmin</span>'
           : x.src === 'strava' ? ' &middot; <span class="src">Strava</span>' : '') + '</div></div>' +
-        '<div class="m-kcal burn">&#8722;' + nf.format(r0(x.kcal)) + '</div></div>';
+        '<div class="m-kcal burn">' + nf.format(r0(x.kcal)) + '<span>burned</span></div></div>';
     }
     const m = r.m;
     const t = sumItems(m.items);
