@@ -103,6 +103,11 @@ textarea{width:100%; resize:vertical;}
 .goal-lbl .over{color:var(--danger);}
 .goal-lbl b{color:var(--porcelain); font-weight:600;}
 .goal-lbl .zone{color:var(--flame);}
+.zstat{display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:6px 8px; margin:2px 0 12px; font-size:15px; line-height:1.35;}
+.zstat .zp{display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:11px; font-weight:600;
+  letter-spacing:.12em; text-transform:uppercase; padding:4px 10px; border-radius:999px; border:1.5px solid; color:var(--porcelain);}
+.zstat .zp i{width:8px; height:8px; border-radius:50%;}
+.zstat b{font-weight:600;}
 .gauge{display:block; height:auto;}
 .gauge svg{display:block; width:100%; height:24px;}
 .zd{display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; vertical-align:middle;}
@@ -457,6 +462,7 @@ select{-webkit-appearance:none; appearance:none;
 <section class="readout">
   <div class="kcal" data-m="kcal" role="button" aria-label="Where today's calories come from"><span id="dayKcal">0</span><span class="unit">kcal</span></div>
   <div id="goalWrap" class="goal" hidden>
+    <div id="zoneStat" class="zstat" hidden></div>
     <div id="ticks" class="ticks"></div>
     <div id="goalLbl" class="goal-lbl"></div>
     <div id="zones" class="zones" hidden></div>
@@ -2071,7 +2077,19 @@ function renderDay(){
       burnTxt = 'burned <b>' + nf.format(r0(burn)) + '</b>' +
         (burned > 0 ? ' (' + nf.format(maint) + ' body + ' + nf.format(r0(burned)) + ' exercise)' : '');
     }
-    $('#goalLbl').innerHTML = burnTxt + '<br>' + (under >= 0 ? nf.format(r0(under)) + ' under' : '<span class="over">' + nf.format(r0(-under)) + ' over</span>');
+    $('#goalLbl').innerHTML = burnTxt;
+    /* Plain-English status right under the number: which zone you're in and how far into it. */
+    const zd = dayZones(st, burn), zk = zoneOf(eaten, zd), zcol = tc().z[zk];
+    const k = v => '<b>' + nf.format(Math.max(0, r0(v))) + ' kcal</b>';
+    const msg = {
+      fast: k(under) + ' under what you burn &middot; ' + k(zd.lo - eaten) + ' left before you drop to Lose',
+      lose: k(under) + ' under &middot; ' + k(zd.hi - eaten) + ' left to stay 500+ under',
+      maint: k(burn - eaten) + ' left before weight gain',
+      over: k(eaten - burn) + ' into weight gain'
+    }[zk];
+    const zname = { fast: 'Lose fast', lose: 'Lose zone', maint: 'Small deficit', over: 'Gain zone' }[zk];
+    $('#zoneStat').hidden = false;
+    $('#zoneStat').innerHTML = '<span class="zp" style="border-color:' + zcol + '"><i style="background:' + zcol + '"></i>' + zname + '</span><span>' + msg + '</span>';
     /* One line per goal; targets move with the day's exercise. The highlighted
        line is the most ambitious goal you are still on track for. */
     const zc = tc().z;
@@ -2093,6 +2111,7 @@ function renderDay(){
     }).join('');
   } else if (goal > 0) {
     $('#zones').hidden = true;
+    $('#zoneStat').hidden = true;
     gw.hidden = false;
     $('#ticks').className = 'ticks';
     const eff = goal + burned;
