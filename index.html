@@ -1383,16 +1383,27 @@ function dayBurnInfo(st, iso, exBurned){
   const gd = getGarminDays();
   const g = gd[iso];
   if (!g || !(g.total > 0)) return { burn: est, maint: maint, src: 'est' };
-  if (iso !== todayISO()) return { burn: g.total, so_far: g.total, maint: maint, src: 'garmin' };
-  /* Today Garmin's number is a running total, so add the resting burn still to come. */
-  const now = new Date();
-  const frac = (now.getHours() * 60 + now.getMinutes()) / 1440;
-  const yd = gd[isoDaysAgo(1)];
-  const bmrDay = (yd && yd.bmr) || (maint ? maint / ACTIVITY[st.activity] : 0);
-  let burn = g.total;
-  const fullDayIncluded = g.bmr && bmrDay && g.bmr >= bmrDay * 0.9 && frac < 0.8;
-  if (bmrDay && !fullDayIncluded) burn = g.total + bmrDay * (1 - frac);
-  return { burn: Math.round(burn), so_far: g.total, maint: maint, src: 'garmin' };
+  /* A full day of resting burn: yesterday's Garmin figure, else the formula. */
+  const yd = gd[isoAdd(iso, -1)];
+  const bmrDay = (iso !== todayISO() && g.bmr) || (yd && yd.bmr) || (maint ? maint / ACTIVITY[st.activity] : 0);
+  /* Garmin's daily summary can lag behind activities the watch has already
+     uploaded. Work out the active calories in the logged activities (minus the
+     resting burn during them) and use whichever is bigger. */
+  const perMin = bmrDay / 1440;
+  const exActive = (getEx()[iso] || []).reduce((a, x) => a + Math.max(0, (Number(x.kcal) || 0) - perMin * (Number(x.mins) || 0)), 0);
+  const active = Math.max(Number(g.active) || 0, exActive);
+  const lag = Math.max(0, exActive - (Number(g.active) || 0));
+  if (iso !== todayISO()) {
+    const burn = g.bmr ? g.bmr + active : g.total + lag;
+    return { burn: Math.round(burn), so_far: Math.round(burn), maint: maint, src: 'garmin' };
+  }
+  /* Today: a full day's resting burn plus everything active so far. This holds even
+     when Garmin's running total hasn't caught up since the watch last synced. */
+  if (bmrDay) {
+    const burn = Math.max(bmrDay + active, g.total + lag);
+    return { burn: Math.round(burn), so_far: Math.round(g.total + lag), maint: maint, src: 'garmin' };
+  }
+  return { burn: Math.round(g.total + lag), so_far: Math.round(g.total + lag), maint: maint, src: 'garmin' };
 }
 function deficitAim(st){
   const lo = Number(st.defMin) > 0 ? Number(st.defMin) : 500;
