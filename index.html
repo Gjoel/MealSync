@@ -137,6 +137,12 @@ textarea{width:100%; resize:vertical;}
 .dd-day{display:flex; justify-content:space-between; gap:8px; width:100%; text-align:left; background:none; border:none;
   border-bottom:1px solid var(--line); padding:9px 0; font-size:14px; color:var(--porcelain);}
 .dd-day span:last-child{font-family:var(--mono); font-size:12px; color:var(--ash); flex:none;}
+.nudges{margin-top:10px; background:var(--iron2); border:1px solid var(--line); border-radius:14px; padding:11px 12px 6px; text-align:left;}
+.ng{display:flex; gap:10px; padding:8px 0; border-top:1px solid var(--line); font-size:13.5px; line-height:1.45;}
+.ng:first-of-type{border-top:none;}
+.ng i{flex:none; width:8px; height:8px; border-radius:50%; margin-top:6px;}
+.ng b{font-weight:600;}
+.ng .ng-act{display:block; margin-top:4px; font-family:var(--mono); font-size:11px; color:var(--flame); background:none; border:none; padding:0; text-align:left;}
 .sg-card{border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin-top:8px; background:var(--iron2);}
 .sg-top{display:flex; justify-content:space-between; align-items:center; gap:10px;}
 .sg-name{font-weight:600; font-size:14.5px;}
@@ -498,6 +504,10 @@ select{-webkit-appearance:none; appearance:none;
       <div class="mt-bar"><i id="tbF"></i></div>
       <div class="mt-sub" id="tsF">0% kcal</div>
     </div>
+  </div>
+  <div class="nudges" id="nudges" hidden>
+    <div class="wk-head"><span>Heads up</span><span></span></div>
+    <div id="nudgeList"></div>
   </div>
   <div class="week" id="weekPanel">
     <div class="wk-head"><span id="wkLbl">Last 7 days</span><button class="wk-trends" id="wkTrends">Trends &rsaquo;</button></div>
@@ -1881,6 +1891,113 @@ $('#dashSheet').addEventListener('click', e => {
 /* ================= suggestions, learned from your good days ================= */
 let sugCache = [];
 function mealKey(m){ return foodKey(m.name) || foodKey((m.items[0] || {}).name); }
+/* ================= nudges: gentle flags for the day being viewed ================= */
+const VEG_RE = /veg|salad|lettuce|broccoli|carrot|spinach|tomato|cucumber|capsicum|zucchini|mushroom|kale|cabbage|bean|pea\b|peas|corn|onion|avocado|fruit|apple|banana|berr|orange|kiwi|grape|mango|pear|pumpkin|potato salad|coleslaw|stir.?fry/i;
+function proteinTarget(st){
+  const g = Number(st.pgoal) || 0;
+  if (g) return { g: g, set: true };
+  const w = currentWeightKg() || Number(st.weightKg) || 0;
+  return { g: w ? r0(w * 1.8) : 0, set: false };
+}
+/* Best high-protein option the user already eats: My foods, regular meals, then recent meals. */
+function proteinPick(){
+  const opts = [];
+  getFavs().forEach(f => { const t = sumItems(f.items); if (t.p >= 20) opts.push({ name: f.name, p: t.p, kcal: t.kcal }); });
+  getFoods().forEach(f => { const g = Number(f.serving_g) || 100; const p = f.per100.p * g / 100, k = f.per100.kcal * g / 100;
+    if (p >= 20) opts.push({ name: f.name, p: p, kcal: k }); });
+  const log = getLog();
+  lastNDaysEnding(todayISO(), 21).forEach(d => (log[d] || []).forEach(m => { const t = sumItems(m.items);
+    if (t.p >= 25) opts.push({ name: m.name, p: t.p, kcal: t.kcal }); }));
+  opts.sort((a, b) => (b.p / Math.max(50, b.kcal)) - (a.p / Math.max(50, a.kcal)));
+  return opts[0] || null;
+}
+function renderNudges(st, log, info, burned){
+  const list = [];
+  const z = tc().z;
+  const warn = z.maint, bad = z.over, good = z.lose;
+  const meals = log[viewDate] || [];
+  const tot = sumItems(meals.flatMap(m => m.items));
+  const isToday = viewDate === todayISO();
+  const now = new Date();
+  const hour = now.getHours() + now.getMinutes() / 60;
+  /* How far through the eating day it is: about 7am to 9pm. */
+  const dayFrac = isToday ? Math.max(0, Math.min(1, (hour - 7) / 14)) : 1;
+  const pt = proteinTarget(st);
+  const pick = proteinPick();
+  const pickTxt = pick ? ' An easy fix: <b>' + esc(pick.name) + '</b> (' + r0(pick.p) + ' g protein, ' + nf.format(r0(pick.kcal)) + ' kcal).' : '';
+
+  let proteinFlagged = false;
+  /* Protein, paced through the day. */
+  if (pt.g && meals.length) {
+    const expected = pt.g * dayFrac;
+    if (!isToday && tot.p < pt.g * 0.8) {
+      list.push([warn, 'Protein finished at <b>' + r0(tot.p) + ' g</b>, ' + r0(pt.g - tot.p) + ' g short of ' + (pt.set ? 'your goal' : 'about ' + pt.g + ' g') + '.']);
+    } else if (isToday && hour >= 11 && tot.p < expected * 0.7) {
+      proteinFlagged = true;
+      list.push([warn, 'Protein is behind: <b>' + r0(tot.p) + ' g</b> so far, you would usually be near ' + r0(expected) + ' g by now (' + pt.g + ' g for the day).' + pickTxt, true]);
+    } else if (tot.p >= pt.g) {
+      list.push([good, 'Protein goal hit: <b>' + r0(tot.p) + ' g</b>. That keeps your muscle while you cut.']);
+    }
+  }
+  if (!pt.set && pt.g) {
+    list.push([warn, 'No protein goal set. For you, about <b>' + pt.g + ' g a day</b> (1.8 g per kg). Set it in You so the protein bar tracks it.']);
+  }
+
+  /* Calories: too low is a problem too. */
+  if (info.burn > 0 && meals.length) {
+    const zn = dayZones(st, info.burn);
+    const floor = st.sex === 'f' ? 1200 : 1500;
+    if (!isToday && tot.kcal < floor * 0.8) {
+      list.push([warn, 'Only <b>' + nf.format(r0(tot.kcal)) + ' kcal</b> logged. If that is everything, it is too low to keep up and costs muscle. If not, something may be missing from the log.']);
+    } else if (isToday && hour >= 18.5 && tot.kcal < floor - 300 && !meals.some(m => (m.time || '') >= '17:00')) {
+      list.push([warn, 'You have had <b>' + nf.format(r0(tot.kcal)) + ' kcal</b> so far. Eat a proper dinner: going under ' + nf.format(floor) + ' for the day makes it harder to hold on to muscle.' + pickTxt, true]);
+    }
+    if (tot.kcal > zn.burn) {
+      list.push([bad, '<b>' + nf.format(r0(tot.kcal - zn.burn)) + ' kcal</b> over what you burn' + (isToday ? ' so far' : '') + '. One day like this is fine; it is the weekly average that counts.']);
+    }
+  }
+
+  /* Fat-heavy days. */
+  const mk = tot.p * 4 + tot.c * 4 + tot.f * 9;
+  if (mk > 800 && tot.f * 9 / mk > 0.42) {
+    const fatTop = meals.flatMap(m => m.items).sort((a, b) => (Number(b.f) || 0) - (Number(a.f) || 0))[0];
+    list.push([warn, 'Fat is <b>' + r0(100 * tot.f * 9 / mk) + '%</b> of the calories' + (fatTop ? ', mostly from ' + esc(fatTop.name) : '') +
+      '. Fat is the easiest place to save calories: sauces, cheese, oil and fried foods.']);
+  }
+
+  /* Fruit and veg over the last few logged days. */
+  const recent = lastNDaysEnding(viewDate, 3).filter(d => (log[d] || []).length);
+  if (recent.length >= 2) {
+    const anyVeg = recent.some(d => log[d].some(m => VEG_RE.test(m.name) || m.items.some(i => VEG_RE.test(i.name))));
+    if (!anyVeg) list.push([warn, 'No fruit or veg logged in the last ' + recent.length + ' days. A frozen veg bag or some fruit adds fibre, keeps you full and costs very few calories.']);
+  }
+
+  /* Weekly protein trend and weigh-ins (today's view only). */
+  if (isToday) {
+    const full = lastNDaysEnding(todayISO(), 8).filter(d => d !== todayISO() && (log[d] || []).length);
+    if (pt.g && full.length >= 4 && !proteinFlagged) {
+      const avgP = full.reduce((a, d) => a + dayTotals(log, d).p, 0) / full.length;
+      if (avgP < pt.g * 0.8) list.push([warn, 'Protein has averaged <b>' + r0(avgP) + ' g</b> over the last ' + full.length + ' days, against ' + pt.g + ' g. Adding one shake or chicken meal a day closes most of the gap.']);
+    }
+    const w = getWeights(), wk = Object.keys(w).sort();
+    const lastW = wk[wk.length - 1];
+    const daysSince = lastW ? Math.round((new Date(todayISO() + 'T12:00:00') - new Date(lastW + 'T12:00:00')) / 86400000) : 99;
+    if (daysSince >= 4) list.push([warn, (lastW ? 'Last weigh-in was ' + daysSince + ' days ago.' : 'No weigh-ins yet.') +
+      ' A morning weigh-in in Trends keeps your targets and pace accurate.']);
+    const y = isoAdd(todayISO(), -1);
+    if (!(log[y] || []).length && Object.keys(log).some(d => d < y)) list.push([warn, 'Nothing logged yesterday. Tap the chart to open it and add what you had.']);
+  }
+
+  /* Things to act on first, good news last. */
+  list.sort((a, b) => (a[0] === good) - (b[0] === good));
+  $('#nudges').hidden = !list.length;
+  $('#nudgeList').innerHTML = list.slice(0, 4).map(n => '<div class="ng"><i style="background:' + n[0] + '"></i><div>' + n[1] +
+    (n[2] ? '<button class="ng-act" data-ideas="1">See ideas &rsaquo;</button>' : '') + '</div></div>').join('');
+}
+$('#nudgeList').addEventListener('click', e => {
+  if (e.target.closest('[data-ideas]')) { $('#sugIdeas').innerHTML = ''; $('#sugSheet').classList.add('open'); renderSuggestions(); }
+});
+
 function renderSuggestions(){
   const st = getSettings(), log = getLog(), exlog = getEx();
   const today = todayISO();
@@ -2220,6 +2337,7 @@ function renderDay(){
   }
 
   renderDash(st, log, tot, burned);
+  renderNudges(st, log, info, burned);
 
   const favSet = new Set(getFavs().map(f => f.id));
   const list = $('#mealList');
