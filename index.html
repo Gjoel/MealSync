@@ -217,6 +217,11 @@ textarea{width:100%; resize:vertical;}
 .favrow{display:flex; gap:8px; overflow-x:auto; padding:12px 0 4px;
   -webkit-overflow-scrolling:touch; scrollbar-width:none;}
 .favrow::-webkit-scrollbar{display:none;}
+@media (hover:hover) and (pointer:fine){
+  .favrow{flex-wrap:wrap; overflow:visible;}
+  .fav-chip{max-width:260px;}
+}
+.fav-chip.usual{border-style:dashed;}
 .fav-chip{display:flex; align-items:center; gap:8px; flex-shrink:0;
   background:var(--iron2); border:1px solid var(--line); border-radius:13px;
   padding:7px 12px 7px 7px; max-width:200px;}
@@ -524,6 +529,7 @@ select{-webkit-appearance:none; appearance:none;
 </section>
 
 <div class="favrow" id="favRow" hidden></div>
+<div class="favrow" id="usualRow" hidden></div>
 
 <section id="mealList" class="meals"></section>
 
@@ -780,6 +786,8 @@ select{-webkit-appearance:none; appearance:none;
     <div id="sugIdeas"></div>
     <div class="eyebrow">What your good days have in common</div>
     <div id="sugTips"></div>
+    <div class="eyebrow" id="sugUsualHd">Your usual</div>
+    <div id="sugUsual"></div>
     <div class="eyebrow">Meals that work for you</div>
     <div id="sugMeals"></div>
     <div class="eyebrow">Watch out for</div>
@@ -1902,6 +1910,69 @@ $('#dashSheet').addEventListener('click', e => {
 /* ================= suggestions, learned from your good days ================= */
 let sugCache = [];
 function mealKey(m){ return foodKey(m.name) || foodKey((m.items[0] || {}).name); }
+
+/* ================= usual meals for the day of the week ================= */
+/* Learns what you tend to eat on this weekday (and on weekdays or weekends in
+   general) over the last 10 weeks, weighting recent weeks more. Meals already
+   logged that day are left out. */
+const GENERIC_MEAL = /^(breakfast|lunch|dinner|snack|meal)$/;
+let usualCache = [];
+function usualMeals(iso){
+  const log = getLog();
+  const dow = new Date(iso + 'T12:00:00').getDay();
+  const weekend = dow === 0 || dow === 6;
+  const base = new Date(iso + 'T12:00:00');
+  const stats = {};
+  Object.keys(log).filter(d => isDay(d) && d < iso && d >= isoAdd(iso, -70)).forEach(d => {
+    const dd = new Date(d + 'T12:00:00').getDay();
+    const we = dd === 0 || dd === 6;
+    const rec = Math.exp(-((base - new Date(d + 'T12:00:00')) / 86400000) / 35);
+    const seen = new Set();
+    (log[d] || []).forEach(m => {
+      const k = mealKey(m);
+      if (!k || GENERIC_MEAL.test(k) || seen.has(k)) return;
+      seen.add(k);
+      const e = stats[k] = stats[k] || { k: k, n: 0, same: 0, type: 0, score: 0, last: null, lastDay: '', kcal: 0, p: 0 };
+      const t = sumItems(m.items);
+      e.n++; e.kcal += t.kcal; e.p += t.p;
+      if (dd === dow) e.same++;
+      if (we === weekend) e.type++;
+      e.score += rec * (dd === dow ? 3 : we === weekend ? 1 : 0.3);
+      if (d >= e.lastDay) { e.last = m; e.lastDay = d; }
+    });
+  });
+  const already = new Set((log[iso] || []).map(mealKey));
+  return Object.values(stats)
+    .filter(e => !already.has(e.k) && e.n >= 2 && (e.same >= 2 || e.type >= 3))
+    .map(e => Object.assign(e, { kcal: e.kcal / e.n, p: e.p / e.n }))
+    .sort((a, b) => b.score - a.score).slice(0, 5);
+}
+function dayName(iso){ return new Date(iso + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'long' }); }
+function renderUsualRow(){
+  const row = $('#usualRow');
+  usualCache = usualMeals(viewDate);
+  if (!usualCache.length) { row.hidden = true; row.innerHTML = ''; return; }
+  row.hidden = false;
+  row.innerHTML = '<span class="fav-lbl">Usual on<br>' + dayName(viewDate) + 's</span>' + usualCache.map((e, i) =>
+    '<button class="fav-chip usual" data-usual="' + i + '"><span class="fc-name">' + esc(e.last.name) + '</span>' +
+    '<span class="fc-kcal">' + nf.format(r0(e.kcal)) + '</span></button>').join('');
+}
+function logUsual(i){
+  const e = usualCache[i];
+  if (!e) return;
+  const clone = JSON.parse(JSON.stringify(e.last));
+  clone.id = uid(); clone.u = Date.now(); clone.time = nowHM();
+  const log = getLog();
+  (log[viewDate] = log[viewDate] || []).push(clone);
+  setLog(log);
+  renderDay();
+  if ($('#sugSheet').classList.contains('open')) renderSuggestions();
+  toast('Logged ' + clone.name + (viewDate === todayISO() ? '' : ' to ' + dateLabel(viewDate)));
+}
+$('#usualRow').addEventListener('click', e => {
+  const c = e.target.closest('[data-usual]');
+  if (c) logUsual(Number(c.dataset.usual));
+});
 /* ================= nudges: gentle flags for the day being viewed ================= */
 const VEG_RE = /veg|salad|lettuce|broccoli|carrot|spinach|tomato|cucumber|capsicum|zucchini|mushroom|kale|cabbage|bean|pea\b|peas|corn|onion|avocado|fruit|apple|banana|berr|orange|kiwi|grape|mango|pear|pumpkin|potato salad|coleslaw|stir.?fry/i;
 function proteinTarget(st){
@@ -2064,6 +2135,16 @@ function renderSuggestions(){
   $('#sugMeals').innerHTML = works.length ? works.slice(0, 6).map(card).join('')
     : '<div class="prod-note">No good days yet. Once a day lands 500+ under, its meals show up here.</div>';
 
+  /* Your usual meals for this weekday. */
+  const usual = usualMeals(today);
+  usualCache = usual;
+  $('#sugUsualHd').textContent = 'Your usual ' + dayName(today);
+  $('#sugUsual').innerHTML = usual.length ? usual.map((e, i) => '<div class="sg-card"><div class="sg-top"><div><div class="sg-name">' + esc(e.last.name) + '</div>' +
+    '<div class="sg-sub">' + nf.format(r0(e.kcal)) + ' kcal &middot; ' + r0(e.p) + ' g protein &middot; ' +
+    (e.same ? e.same + ' of the last ' + dayName(today) + 's' : 'often on ' + ([0, 6].includes(new Date(today + 'T12:00:00').getDay()) ? 'weekends' : 'weekdays')) + '</div></div>' +
+    '<button class="ghost sg-log" data-usual="' + i + '">Log</button></div></div>').join('')
+    : '<div class="prod-note">Nothing yet, or you have already logged your usual meals today.</div>';
+
   /* What fits the rest of today. */
   const tf = dayFacts(st, log, exlog, today);
   let html = '';
@@ -2169,7 +2250,9 @@ $('#sugClose').addEventListener('click', () => $('#sugSheet').classList.remove('
 $('#sugSheet').addEventListener('click', e => {
   if (e.target === e.currentTarget) { $('#sugSheet').classList.remove('open'); return; }
   const b = e.target.closest('[data-sug]');
-  if (b) logSuggestion(Number(b.dataset.sug));
+  if (b) { logSuggestion(Number(b.dataset.sug)); return; }
+  const u = e.target.closest('[data-usual]');
+  if (u) { const vd = viewDate; viewDate = todayISO(); logUsual(Number(u.dataset.usual)); viewDate = vd; renderDay(); }
 });
 
 /* ================= favourites ================= */
@@ -2349,6 +2432,7 @@ function renderDay(){
 
   renderDash(st, log, tot, burned);
   renderNudges(st, log, info, burned);
+  renderUsualRow();
 
   const favSet = new Set(getFavs().map(f => f.id));
   const list = $('#mealList');
