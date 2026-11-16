@@ -328,6 +328,10 @@ textarea{width:100%; resize:vertical;}
 .num input::-webkit-outer-spin-button,.num input::-webkit-inner-spin-button{-webkit-appearance:none; margin:0;}
 .num.g input{width:66px;} .num.k input{width:74px;}
 .num.m input{width:58px;}
+.qty{display:flex; align-items:center; gap:6px; flex:none;}
+.qty input{width:54px; font-family:var(--mono); font-size:15px; font-weight:600; text-align:center; padding:9px 4px; border-color:var(--flame);}
+.qty span{font-family:var(--mono); font-size:11px; color:var(--flame); max-width:64px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.item-top .i-name{min-width:0;}
 .num.t input{width:84px;}
 .i-note{font-size:12.5px; color:var(--ash); margin-top:8px; line-height:1.45;}
 .assume{margin:8px 0 0; padding-left:18px; color:var(--ash); font-size:13.5px; line-height:1.55;}
@@ -1120,10 +1124,11 @@ Method:
 7. Use standard food composition data (AFCD or USDA) for energy and macros. Keep kcal consistent with the macros (about 4 kcal/g protein, 4 kcal/g carbohydrate, 9 kcal/g fat, 7 kcal/g alcohol).
 8. Give a decisive best estimate rather than a wide hedge, and state your key assumptions.
 9. If the user supplies a correction or extra detail, treat it as ground truth and re-estimate everything consistently with it.
-10. Give the meal a short, natural name for what was actually eaten, the way a person would say it, e.g. "Pepperoni pizza", "Chicken & chipotle sandwich", "Vegemite toast", "Beef taco cups". Never a time-of-day word like Breakfast, Lunch, Dinner or Snack.
+10. If an item is naturally counted (biscuits, slices, pieces, tenders, nuggets, eggs, hash browns, scoops, cans, bottles, rolls, dumplings), set "unit" to the singular unit word (e.g. "biscuit", "slice", "tender", "egg") and "count" to how many. For anything measured by weight or volume set "unit" to "" and "count" to 0. grams is always the total weight.
+11. Give the meal a short, natural name for what was actually eaten, the way a person would say it, e.g. "Pepperoni pizza", "Chicken & chipotle sandwich", "Vegemite toast", "Beef taco cups". Never a time-of-day word like Breakfast, Lunch, Dinner or Snack.
 
 Respond with ONLY a single JSON object. No markdown, no code fences, no commentary. Exactly this shape:
-{"meal_name":"short name of the dish","items":[{"name":"...","grams":0,"kcal":0,"protein_g":0,"carbs_g":0,"fat_g":0,"note":"one short assumption for this item, or empty string"}],"confidence":"high|medium|low","assumptions":["..."],"question":"the single short question that would most improve accuracy, or empty string"}`;
+{"meal_name":"short name of the dish","items":[{"name":"...","grams":0,"unit":"","count":0,"kcal":0,"protein_g":0,"carbs_g":0,"fat_g":0,"note":"one short assumption for this item, or empty string"}],"confidence":"high|medium|low","assumptions":["..."],"question":"the single short question that would most improve accuracy, or empty string"}`;
 
 const EXSYS = `You turn exercise descriptions or pasted fitness app summaries (Strava, Garmin, Apple Watch and similar) into structured activities.
 
@@ -1166,9 +1171,10 @@ const MEAL_SCHEMA = {
     meal_name: { type: 'string' },
     items: { type: 'array', items: {
       type: 'object', additionalProperties: false,
-      required: ['name', 'grams', 'kcal', 'protein_g', 'carbs_g', 'fat_g', 'note'],
+      required: ['name', 'grams', 'unit', 'count', 'kcal', 'protein_g', 'carbs_g', 'fat_g', 'note'],
       properties: {
-        name: { type: 'string' }, grams: { type: 'number' }, kcal: { type: 'number' },
+        name: { type: 'string' }, grams: { type: 'number' }, unit: { type: 'string' }, count: { type: 'number' },
+        kcal: { type: 'number' },
         protein_g: { type: 'number' }, carbs_g: { type: 'number' }, fat_g: { type: 'number' },
         note: { type: 'string' }
       }
@@ -1309,12 +1315,12 @@ async function callClaude(userText){
   const items = (Array.isArray(j.items) ? j.items : []).map(it => {
     const grams = Math.max(1, r0(it.grams));
     const kcal = r0(it.kcal), p = r1(it.protein_g), c = r1(it.carbs_g), f = r1(it.fat_g);
-    return {
+    return withUnit({
       id: uid(), name: String(it.name || 'Item'),
       grams: grams, kcal: kcal, p: p, c: c, f: f,
       note: String(it.note || ''),
       basis: { kcal: kcal / grams, p: p / grams, c: c / grams, f: f / grams }
-    };
+    }, it.unit, it.count);
   });
   if (!items.length) throw new Error('No food was identified. Try a clearer photo or add more detail.');
   return {
@@ -2307,7 +2313,8 @@ function toggleFav(){
       thumb: session.thumb || '',
       items: session.items.map(i => ({
         name: i.name || 'Item', grams: r1(i.grams), kcal: r0(i.kcal),
-        p: r1(i.p), c: r1(i.c), f: r1(i.f), note: i.note || ''
+        p: r1(i.p), c: r1(i.c), f: r1(i.f), note: i.note || '',
+        ...(i.unit && i.count ? { unit: i.unit, count: r1(i.count) } : {})
       }))
     };
     fav.u = Date.now();
@@ -2571,6 +2578,8 @@ function renderItems(){
     '<div class="item" data-id="' + it.id + '">' +
       '<div class="item-top">' +
         '<input class="i-name" data-f="name" value="' + esc(it.name) + '">' +
+        (it.unit && it.count ? '<div class="qty"><input data-f="count" type="number" step="any" inputmode="decimal" min="0" value="' + it.count +
+          '" aria-label="How many"><span>' + esc(plural(it.count, it.unit)) + '</span></div>' : '') +
         '<button class="i-del" aria-label="Remove item"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>' +
       '</div>' +
       '<div class="item-nums">' +
@@ -2607,8 +2616,23 @@ $('#items').addEventListener('input', e => {
   const f = e.target.dataset.f;
   if (f === 'name') { it.name = e.target.value; return; }
   const v = parseFloat(e.target.value) || 0;
-  if (f === 'grams') {
-    it.grams = Math.max(0, v);
+  if (f === 'count' && it.unitG) {
+    it.count = Math.max(0, v);
+    it.grams = r1(it.count * it.unitG);
+    const gi = $('[data-f="grams"]', row); if (gi) gi.value = it.grams;
+    const lb = $('.qty span', row); if (lb) lb.textContent = plural(it.count, it.unit);
+    /* Keep a count in the name, like "Chicken tenders (4)", in step. */
+    if (/\(\d+(\.\d+)?\)\s*$/.test(it.name || '')) {
+      it.name = it.name.replace(/\(\d+(\.\d+)?\)\s*$/, '(' + it.count + ')');
+      const ni = $('[data-f="name"]', row); if (ni) ni.value = it.name;
+    }
+  }
+  if (f === 'grams' && it.unitG) {
+    it.count = r1(v / it.unitG);
+    const ci = $('[data-f="count"]', row); if (ci) ci.value = it.count;
+  }
+  if (f === 'grams' || f === 'count') {
+    if (f === 'grams') it.grams = Math.max(0, v);
     if (it.basis) {
       it.kcal = r0(it.grams * it.basis.kcal);
       it.p = r1(it.grams * it.basis.p);
@@ -2616,7 +2640,7 @@ $('#items').addEventListener('input', e => {
       it.f = r1(it.grams * it.basis.f);
       $$('.num input', row).forEach(inp => {
         const g = inp.dataset.f;
-        if (g !== 'grams') inp.value = it[g];
+        if (g !== 'grams' && g !== 'count') inp.value = it[g];
       });
     }
   } else {
@@ -2708,12 +2732,15 @@ $('#foodAdd').addEventListener('click', () => {
   if (!(g > 0)) { $('#foodN').focus(); return; }
   const n = parseFloat($('#foodN').value) || 0;
   const k = g / 100;
-  session.items.push({
+  const byServe = $('#foodUnit').value === 'serve';
+  const item = {
     id: uid(), name: f.name, grams: r1(g),
     kcal: r0(f.per100.kcal * k), p: r1(f.per100.p * k), c: r1(f.per100.c * k), f: r1(f.per100.f * k),
-    note: $('#foodUnit').value === 'serve' ? n + ' × ' + (f.serving_label || 'serve') + ', from the label' : 'From the label',
+    note: 'From the label',
     basis: { kcal: f.per100.kcal / 100, p: f.per100.p / 100, c: f.per100.c / 100, f: f.per100.f / 100 }
-  });
+  };
+  if (Number(f.serving_g) > 0) withUnit(item, f.serving_label, byServe ? n : g / Number(f.serving_g));
+  session.items.push(item);
   const foods = getFoods();
   const ff = foods.find(x => x.id === f.id);
   if (ff) { ff.lastUsed = Date.now(); setFoods(foods); }
@@ -2924,16 +2951,38 @@ function applyEstimate(est){
   session.confidence = est.confidence;
   session.question = est.question;
 }
+/* Countable items carry a unit ("tender"), a count and the weight of one. */
+const MEASURE_UNITS = /^(g|grams?|kg|ml|mls|l|litres?|liters?|oz|serve|serves|serving|servings|portion)$/i;
+function withUnit(it, unit, count){
+  unit = String(unit || '').trim().toLowerCase();
+  count = Number(count) || 0;
+  if (unit && !MEASURE_UNITS.test(unit) && count > 0 && it.grams > 0) {
+    it.unit = unit.replace(/s$/, '') || unit;
+    it.count = r1(count);
+    it.unitG = it.grams / count;
+  }
+  return it;
+}
+/* Older items: read a count from names like "Chicken tenders (4)" or "Toast (2 slices)". */
+function inferUnit(it){
+  if (it.unit && it.count) return withUnit(it, it.unit, it.count);
+  const m = /\((\d+(?:\.\d+)?)\s*(?:x\s*)?([a-z]+)?\)\s*$/i.exec(it.name || '') || /^(\d+(?:\.\d+)?)\s*(?:x\s*)?([a-z]+)?\s+/i.exec(it.name || '');
+  if (!m) return it;
+  const word = (m[2] || '').toLowerCase();
+  if (word && (MEASURE_UNITS.test(word) || /^(cup|cups|tbsp|tsp|tablespoons?|teaspoons?)$/.test(word))) return it;
+  return withUnit(it, word || 'piece', Number(m[1]));
+}
+const plural = (n, u) => u + (Number(n) === 1 || /s$/.test(u) ? '' : (/(ch|sh|x)$/.test(u) ? 'es' : 's'));
 function sessionItemsFrom(items){
   return items.map(i => {
     const grams = Math.max(1, Number(i.grams) || 1);
-    return {
+    return inferUnit({
       id: uid(), name: i.name, grams: grams,
       kcal: Number(i.kcal) || 0, p: Number(i.p) || 0, c: Number(i.c) || 0, f: Number(i.f) || 0,
-      note: i.note || '',
+      note: i.note || '', unit: i.unit || '', count: Number(i.count) || 0,
       basis: { kcal: (Number(i.kcal) || 0) / grams, p: (Number(i.p) || 0) / grams,
                c: (Number(i.c) || 0) / grams, f: (Number(i.f) || 0) / grams }
-    };
+    });
   });
 }
 /* The most recently logged meal, by date then time. */
@@ -3140,7 +3189,8 @@ $('#saveMeal').addEventListener('click', () => {
     confidence: session.confidence || '', assumptions: session.assumptions || [],
     items: session.items.map(i => ({
       name: i.name || 'Item', grams: r1(i.grams), kcal: r0(i.kcal),
-      p: r1(i.p), c: r1(i.c), f: r1(i.f), note: i.note || ''
+      p: r1(i.p), c: r1(i.c), f: r1(i.f), note: i.note || '',
+      ...(i.unit && i.count ? { unit: i.unit, count: r1(i.count) } : {})
     }))
   };
   (log[dk] = log[dk] || []).push(entry);
