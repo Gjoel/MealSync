@@ -137,6 +137,8 @@ textarea{width:100%; resize:vertical;}
 .dd-day{display:flex; justify-content:space-between; gap:8px; width:100%; text-align:left; background:none; border:none;
   border-bottom:1px solid var(--line); padding:9px 0; font-size:14px; color:var(--porcelain);}
 .dd-day span:last-child{font-family:var(--mono); font-size:12px; color:var(--ash); flex:none;}
+.well{display:flex; flex-wrap:wrap; justify-content:center; gap:4px 14px; margin-top:10px; font-family:var(--mono); font-size:11px; color:var(--ash);}
+.well b{color:var(--porcelain); font-weight:600;}
 .nudges{margin-top:10px; background:var(--iron2); border:1px solid var(--line); border-radius:14px; padding:11px 12px 6px; text-align:left;}
 .ng{display:flex; gap:10px; padding:8px 0; border-top:1px solid var(--line); font-size:13.5px; line-height:1.45;}
 .ng:first-of-type{border-top:none;}
@@ -514,6 +516,7 @@ select{-webkit-appearance:none; appearance:none;
       <div class="mt-sub" id="tsF">0% kcal</div>
     </div>
   </div>
+  <div class="well" id="wellRow" hidden></div>
   <div class="nudges" id="nudges" hidden>
     <div class="wk-head"><span>Heads up</span><span></span></div>
     <div id="nudgeList"></div>
@@ -771,6 +774,11 @@ select{-webkit-appearance:none; appearance:none;
     <div class="set-note" style="margin:8px 0 0">Tap a day, or a zone below, for a summary.</div>
     <div class="dz" id="dashZones"></div>
     <div id="dashDetail"></div>
+    <div id="dashWellWrap" hidden>
+      <div class="eyebrow">Sleep &amp; stress</div>
+      <div class="ins-grid" id="dashWell" style="margin-top:0"></div>
+      <div id="dashWellTips"></div>
+    </div>
     <div class="eyebrow">Top calorie sources</div>
     <div id="dashFoodsK"></div>
     <div class="eyebrow">Top protein sources</div>
@@ -1890,6 +1898,7 @@ function renderDashboard(){
   };
   $('#dashFoodsK').innerHTML = top('kcal', 'kcal');
   $('#dashFoodsP').innerHTML = top('p', 'g');
+  renderDashWellness(st, log, days);
 }
 /* Drill-down under the chart: one day, or every day in a zone. */
 function renderDashDetail(st, rows){
@@ -2026,6 +2035,81 @@ $('#usualRow').addEventListener('click', e => {
   const c = e.target.closest('[data-usual]');
   if (c) logUsual(Number(c.dataset.usual));
 });
+/* ================= sleep, stress and steps from Garmin ================= */
+const fmtSleep = s => { const m = Math.round(s / 60); return Math.floor(m / 60) + 'h ' + pad(m % 60); };
+function renderWellRow(){
+  const g = getGarminDays()[viewDate];
+  const el = $('#wellRow');
+  if (!g || !(g.sleep_s || g.stress || g.steps || g.bb_high)) { el.hidden = true; return; }
+  const bits = [];
+  if (g.sleep_s) bits.push('sleep <b>' + fmtSleep(g.sleep_s) + '</b>' + (g.score ? ' (' + g.score + ')' : ''));
+  if (g.stress) bits.push('stress <b>' + g.stress + '</b>');
+  if (g.steps) bits.push('steps <b>' + nf.format(g.steps) + '</b>');
+  if (g.bb_high) bits.push('body battery <b>' + g.bb_high + '</b>');
+  if (g.rhr) bits.push('resting HR <b>' + g.rhr + '</b>');
+  el.hidden = false;
+  el.innerHTML = bits.map(b => '<span>' + b + '</span>').join('');
+}
+/* How eating changes with sleep, stress and steps. Compares full logged days
+   in two groups and only speaks when each group has at least 2 days. */
+function wellnessFindings(st, log, days){
+  const gd = getGarminDays(), exlog = getEx(), today = todayISO();
+  const rows = days.filter(d => d !== today && (log[d] || []).length && gd[d])
+    .map(d => Object.assign(dayFacts(st, log, exlog, d), { g: gd[d] })).filter(r => r.burn && r.kcal >= 900);
+  const out = [];
+  const avg = (arr, f) => arr.reduce((a, r) => a + f(r), 0) / arr.length;
+  const overPct = arr => Math.round(100 * arr.filter(r => r.zone === 'over' || r.zone === 'maint').length / arr.length);
+  const compare = (a, b, labelA, labelB) => {
+    if (a.length < 2 || b.length < 2) return null;
+    return { dk: avg(a, r => r.kcal) - avg(b, r => r.kcal), du: avg(a, r => r.under) - avg(b, r => r.under),
+             pa: overPct(a), pb: overPct(b), na: a.length, nb: b.length, la: labelA, lb: labelB };
+  };
+  const slept = rows.filter(r => r.g.sleep_s);
+  const shortN = slept.filter(r => r.g.sleep_s < 6.5 * 3600), goodN = slept.filter(r => r.g.sleep_s >= 7 * 3600);
+  const sc = compare(shortN, goodN);
+  if (sc && Math.abs(sc.dk) >= 100) {
+    out.push((sc.dk > 0 ? 'After nights under 6.5 hours you eat about <b>' + nf.format(r0(sc.dk)) + ' kcal more</b>'
+      : 'After nights under 6.5 hours you actually eat about <b>' + nf.format(r0(-sc.dk)) + ' kcal less</b>') +
+      ' than after 7+ hours (' + sc.na + ' vs ' + sc.nb + ' days). Small-deficit or over days: ' + sc.pa + '% vs ' + sc.pb + '%.');
+  }
+  const stressed = rows.filter(r => r.g.stress).sort((x, y) => x.g.stress - y.g.stress);
+  if (stressed.length >= 4) {
+    const mid = Math.floor(stressed.length / 2);
+    const lo = stressed.slice(0, mid), hi = stressed.slice(mid);
+    const c = compare(hi, lo);
+    if (c && Math.abs(c.dk) >= 100) {
+      out.push('On higher-stress days (avg ' + r0(avg(hi, r => r.g.stress)) + ') you eat about <b>' + nf.format(r0(Math.abs(c.dk))) + ' kcal ' +
+        (c.dk > 0 ? 'more' : 'less') + '</b> than on calmer days (avg ' + r0(avg(lo, r => r.g.stress)) + ').');
+    }
+  }
+  const stepped = rows.filter(r => r.g.steps);
+  const many = stepped.filter(r => r.g.steps >= 10000), few = stepped.filter(r => r.g.steps < 6000);
+  const st2 = compare(many, few);
+  if (st2 && Math.abs(st2.du) >= 150) {
+    out.push('On 10k+ step days you finish <b>' + nf.format(r0(Math.abs(st2.du))) + ' kcal ' + (st2.du > 0 ? 'further under' : 'less under') +
+      '</b> than on days under 6k steps.');
+  }
+  return { rows: rows, slept: slept, findings: out };
+}
+function renderDashWellness(st, log, days){
+  const w = wellnessFindings(st, log, days);
+  const gd = getGarminDays();
+  const withG = days.filter(d => gd[d] && (gd[d].sleep_s || gd[d].stress || gd[d].steps));
+  $('#dashWellWrap').hidden = !withG.length;
+  if (!withG.length) return;
+  const av = (k) => { const v = withG.map(d => gd[d][k]).filter(x => x > 0); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0; };
+  const sl = av('sleep_s'), sc = av('score'), sr = av('stress'), sp = av('steps'), bb = av('bb_high'), hr = av('rhr');
+  const tiles = [];
+  if (sl) tiles.push(insTile('Avg sleep', fmtSleep(sl), '', sc ? 'score ' + r0(sc) : 'per night'));
+  if (sr) tiles.push(insTile('Avg stress', r0(sr), '/ 100', sr < 26 ? 'low' : sr < 51 ? 'medium' : 'high'));
+  if (sp) tiles.push(insTile('Avg steps', nf.format(r0(sp)), '', 'a day'));
+  if (bb) tiles.push(insTile('Body battery', r0(bb), '/ 100', 'average daily high'));
+  if (hr) tiles.push(insTile('Resting HR', r0(hr), 'bpm', 'average'));
+  $('#dashWell').innerHTML = tiles.join('');
+  $('#dashWellTips').innerHTML = w.findings.length ? w.findings.map(t => '<div class="sg-tip">' + t + '</div>').join('')
+    : '<div class="prod-note">Patterns between sleep, stress and eating show up after about two weeks of Garmin data with full days logged.</div>';
+}
+
 /* ================= nudges: gentle flags for the day being viewed ================= */
 const VEG_RE = /veg|salad|lettuce|broccoli|carrot|spinach|tomato|cucumber|capsicum|zucchini|mushroom|kale|cabbage|bean|pea\b|peas|corn|onion|avocado|fruit|apple|banana|berr|orange|kiwi|grape|mango|pear|pumpkin|potato salad|coleslaw|stir.?fry/i;
 function proteinTarget(st){
@@ -2090,6 +2174,15 @@ function renderNudges(st, log, info, burned){
     if (tot.kcal > zn.burn) {
       list.push([bad, '<b>' + nf.format(r0(tot.kcal - zn.burn)) + ' kcal</b> over what you burn' + (isToday ? ' so far' : '') + '. One day like this is fine; it is the weekly average that counts.']);
     }
+  }
+
+  /* Short sleep last night. */
+  const gw = getGarminDays()[viewDate];
+  if (isToday && gw && gw.sleep_s && gw.sleep_s < 6.5 * 3600) {
+    const wf = wellnessFindings(st, log, lastNDaysEnding(todayISO(), 60));
+    const hint = wf.findings.find(t => /under 6.5 hours/.test(t));
+    list.push([warn, 'Short night: <b>' + fmtSleep(gw.sleep_s) + '</b> of sleep. Hunger usually runs higher after one, so lead with protein and plan your evening snack.' +
+      (hint ? ' ' + hint.replace(/<\/?b>/g, '') : '')]);
   }
 
   /* Fat-heavy days. */
@@ -2238,6 +2331,7 @@ function renderSuggestions(){
       tips.push('You log <b>' + r1(mealsN(good)) + ' meals</b> on good days and ' + r1(mealsN(rest)) + ' on other days.');
     }
   }
+  wellnessFindings(st, log, lastNDaysEnding(today, 60)).findings.forEach(t => tips.push(t));
   if (pg && rows.length && avg(rows, r => r.p) < pg * 0.8) {
     tips.push('Protein is averaging <b>' + r0(avg(rows, r => r.p)) + ' g</b>, short of your ' + pg + ' g goal. A shake or a chicken lunch most days closes the gap.');
   }
@@ -2485,6 +2579,7 @@ function renderDay(){
   }
 
   renderDash(st, log, tot, burned);
+  renderWellRow();
   renderNudges(st, log, info, burned);
   renderUsualRow();
 
@@ -4259,7 +4354,14 @@ async function garminSync(force){
     if (!r.connected) return;
     if (Array.isArray(r.days) && r.days.length) {
       const gd = getGarminDays();
-      r.days.forEach(d => { if (d && d.date && d.total > 0) gd[d.date] = { total: d.total, active: d.active || 0, bmr: d.bmr || 0 }; });
+      r.days.forEach(d => {
+        if (!d || !d.date) return;
+        const prev = gd[d.date] || {};
+        const w = {};
+        ['steps', 'rhr', 'stress', 'bb_high', 'bb_low', 'sleep_s', 'score', 'deep_s', 'rem_s'].forEach(k => { if (Number(d[k]) > 0) w[k] = Number(d[k]); });
+        const cal = d.total > 0 ? { total: d.total, active: d.active || 0, bmr: d.bmr || 0 } : {};
+        gd[d.date] = Object.assign({}, prev, w, cal);
+      });
       /* Keep about two months. */
       Object.keys(gd).sort().slice(0, -60).forEach(k => delete gd[k]);
       localStorage.setItem(GDKEY, JSON.stringify(gd));
