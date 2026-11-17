@@ -104,7 +104,37 @@ function dayCalories(d: any) {
   const active = pickNum(f, /activekilocalories|activecalories|burnedactive/);
   const bmr = pickNum(f, /bmrkilocalories|bmrcalories|restingcalories|burnedresting/);
   const total = pickNum(f, /totalkilocalories|totalcalories|burnedtotal/) || (active + bmr);
-  return { date, total, active, bmr };
+  // Wellness extras for the sleep, stress and activity insights.
+  const steps = pickNum(f, /(^|\.)steps\.value$|^totalsteps$/);
+  const rhr = pickNum(f, /heartrate\.restingvalue$|^restingheartrate$/);
+  const stress = pickNum(f, /stress\.avglevel$|^averagestresslevel$/);
+  const bb_high = pickNum(f, /bodybattery\.maxvalue$|^bodybatteryhighestvalue$/);
+  const bb_low = pickNum(f, /bodybattery\.minvalue$|^bodybatterylowestvalue$/);
+  return { date, total, active, bmr, steps, rhr, stress, bb_high, bb_low };
+}
+// Sleep for each night, keyed by the date you woke up (Garmin's calendarDate).
+async function sleepByDate(token: string, start: string, end: string) {
+  const out: Record<string, { sleep_s: number; score: number; deep_s: number; rem_s: number }> = {};
+  try {
+    const raw = await garminGet(token, '/sleep-service/sleep/dailySleepSummariesByDate?startDate=' + start + '&endDate=' + end);
+    // deno-lint-ignore no-explicit-any
+    const list: any[] = Array.isArray(raw) ? raw : (raw && (raw.data || raw.dailySleepSummaries || raw.sleepSummaries)) || [];
+    console.log('garmin sleep', list.length, 'keys:', Object.keys(flat(list[list.length - 1] || {})).slice(0, 70).join(','));
+    for (const item of list) {
+      const f = flat(item);
+      const date = String(item.calendarDate ?? f['dailySleepDTO.calendarDate'] ?? item.date ?? '').slice(0, 10);
+      if (!/^\d{4}-\d\d-\d\d$/.test(date)) continue;
+      const deep = pickNum(f, /deepsleepseconds$|deepsleepduration/);
+      const light = pickNum(f, /lightsleepseconds$|lightsleepduration/);
+      const rem = pickNum(f, /remsleepseconds$|remsleepduration/);
+      const sleep = pickNum(f, /sleeptimeseconds$|totalsleepseconds$|sleepdurationinseconds$|totalsleeptimeinseconds$/) || (deep + light + rem);
+      const score = pickNum(f, /sleepscores?\.overall\.value$|overallsleepscore|sleepscore\.value$|^sleepscore$|overall\.value$/);
+      if (sleep || score) out[date] = { sleep_s: sleep, score: score > 100 ? 0 : score, deep_s: deep, rem_s: rem };
+    }
+  } catch (e) {
+    console.log('garmin sleep failed', (e as Error).message);
+  }
+  return out;
 }
 // Garmin's whole-day burn (resting + steps + workouts) for each day in range.
 async function dailyTotals(token: string, start: string, end: string) {
@@ -236,6 +266,12 @@ Deno.serve(async (req) => {
         });
       }
       const days = await dailyTotals(token, start, end);
+      const sleep = await sleepByDate(token, start, end);
+      // deno-lint-ignore no-explicit-any
+      days.forEach((d: any) => { if (sleep[d.date]) Object.assign(d, sleep[d.date]); });
+      // A night of sleep can arrive before that day's summary exists.
+      // deno-lint-ignore no-explicit-any
+      Object.keys(sleep).forEach((dt) => { if (!days.some((d) => d.date === dt)) (days as any[]).push({ date: dt, total: 0, active: 0, bmr: 0, ...sleep[dt] }); });
       const since = Math.floor(Date.parse(row.connected_at) / 1000) || 0;
       return json({ connected: true, since, activities: out, days });
     }
