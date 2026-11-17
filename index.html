@@ -629,6 +629,10 @@ select{-webkit-appearance:none; appearance:none;
           <button id="foodAdd" class="primary">Add</button>
         </div>
         <div id="foodInfo" class="prod-note" hidden></div>
+        <div class="prod-search" style="margin-top:8px">
+          <input id="linkIn" type="url" inputmode="url" autocapitalize="off" placeholder="Paste a Coles or Woolworths link">
+          <button id="linkGo" class="ghost">Get</button>
+        </div>
         <div class="food-actions">
           <button id="foodScan" class="ghost">Scan a label</button>
           <button id="foodEdit" class="ghost" hidden>Edit</button>
@@ -1124,7 +1128,7 @@ Method:
 7. Use standard food composition data (AFCD or USDA) for energy and macros. Keep kcal consistent with the macros (about 4 kcal/g protein, 4 kcal/g carbohydrate, 9 kcal/g fat, 7 kcal/g alcohol).
 8. Give a decisive best estimate rather than a wide hedge, and state your key assumptions.
 9. If the user supplies a correction or extra detail, treat it as ground truth and re-estimate everything consistently with it.
-10. If an item is naturally counted (biscuits, slices, pieces, tenders, nuggets, eggs, hash browns, scoops, cans, bottles, rolls, dumplings), set "unit" to the singular unit word (e.g. "biscuit", "slice", "tender", "egg") and "count" to how many. For anything measured by weight or volume set "unit" to "" and "count" to 0. grams is always the total weight.
+10. Give every item the household unit a person would count it in, set "unit" to that singular word and "count" to how many, so the user can adjust by number instead of grams. Use count units for countable food (biscuit, slice, tender, egg, hash brown, nugget, roll, can, bottle, scoop, piece, wrap, burger, slice of pizza) and household measures for the rest (cup, bowl, glass, tbsp, tsp, handful, plate, serve). Use "serve" only when nothing more specific fits. grams is always the total weight.
 11. Give the meal a short, natural name for what was actually eaten, the way a person would say it, e.g. "Pepperoni pizza", "Chicken & chipotle sandwich", "Vegemite toast", "Beef taco cups". Never a time-of-day word like Breakfast, Lunch, Dinner or Snack.
 
 Respond with ONLY a single JSON object. No markdown, no code fences, no commentary. Exactly this shape:
@@ -1143,6 +1147,49 @@ Rules:
 Respond with ONLY a single JSON object. No markdown, no code fences, no commentary. Exactly this shape:
 {"activities":[{"name":"...","minutes":0,"kcal":0,"time":""}]}`;
 
+const LINKSYS = `You find the nutrition information panel for one grocery product from a product page link (usually Coles or Woolworths in Australia).
+
+Method:
+1. Fetch the link. Supermarket pages often block automated reading or load the nutrition table with scripts. If the fetched page does not show the nutrition panel, search the web for the same product (brand, name and pack size, which are usually in the link itself) and read its panel from another reliable page: the other supermarket, the brand's own site, or Open Food Facts.
+2. Use the per 100 g (or per 100 mL) column. If only per-serving values are shown, scale them to 100 g using the stated serving size. Energy in kcal; if only kJ is shown, kcal = kJ / 4.184.
+3. serving_g is the stated serving size in grams (treat mL as grams), or 0 if none. serving_label is what one serving is in plain words, e.g. "piece", "slice", "scoop", "bar", or "serve" if it is just a weight.
+4. name is a short product name with the brand in brackets, e.g. "P30 protein powder, vanilla (Musashi)".
+5. source is the website the numbers came from, e.g. "coles.com.au".
+6. If you cannot find a trustworthy panel for this exact product, set found to false. Never guess numbers.
+
+Respond with ONLY a single JSON object, no other text:
+{"found":true,"name":"","serving_g":0,"serving_label":"","kcal_100g":0,"protein_100g":0,"carbs_100g":0,"fat_100g":0,"source":""}`;
+/* Reads a product page link with Claude's web fetch and web search tools.
+   Server tools can't be combined with the JSON schema mode, so the reply is
+   plain JSON text; "pause_turn" means the server loop needs another request. */
+async function readProductLink(url){
+  const model = currentModel();
+  const basicTools = /haiku/.test(model);
+  aborter = new AbortController();
+  const messages = [{ role: 'user', content: [{ type: 'text', text: 'Product link: ' + url + '\nFind its nutrition information panel.' }] }];
+  const body = {
+    model: model, max_tokens: 16000, system: LINKSYS, messages: messages,
+    output_config: { effort: 'low' },
+    tools: [
+      { type: basicTools ? 'web_fetch_20250910' : 'web_fetch_20260209', name: 'web_fetch', max_uses: 3, max_content_tokens: 30000 },
+      { type: basicTools ? 'web_search_20250305' : 'web_search_20260209', name: 'web_search', max_uses: 4 }
+    ]
+  };
+  for (let turn = 0; turn < 5; turn++) {
+    const r = await postMessages(body);
+    if (!r.res.ok) throw new Error(apiErrorMessage(r.res.status, r.data));
+    if (r.data.stop_reason === 'refusal') throw new Error('The model declined this one. Try scanning the label instead.');
+    if (r.data.stop_reason === 'pause_turn') {
+      /* Resume: send the paused assistant turn back as is; the server carries on. */
+      messages.splice(1);
+      messages.push({ role: 'assistant', content: r.data.content });
+      continue;
+    }
+    const text = (r.data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+    return sliceJSON(text);
+  }
+  throw new Error('That product took too long to look up. Try again, or scan the label.');
+}
 const LBLSYS = `You read the nutrition information panel on food packaging from a photo.
 
 Rules:
@@ -1320,7 +1367,7 @@ async function callClaude(userText){
       grams: grams, kcal: kcal, p: p, c: c, f: f,
       note: String(it.note || ''),
       basis: { kcal: kcal / grams, p: p / grams, c: c / grams, f: f / grams }
-    }, it.unit, it.count);
+    }, it.unit || 'serve', Number(it.count) > 0 ? it.count : 1);
   });
   if (!items.length) throw new Error('No food was identified. Try a clearer photo or add more detail.');
   return {
@@ -2797,6 +2844,31 @@ $('#lblSave').addEventListener('click', () => {
 });
 $('#foodScan').addEventListener('click', () => $('#lblIn').click());
 $('#lblIn').addEventListener('change', e => { scanLabel(e.target.files[0]); e.target.value = ''; });
+async function getFromLink(url){
+  url = String(url || '').trim();
+  if (!/^https?:\/\/\S+\.\S+/i.test(url)) { showSheetError('Paste the full product link, starting with https://'); return; }
+  setSheetState('busy', 'Reading the product page');
+  try {
+    const j = await readProductLink(url);
+    if (!session) return;
+    setSheetState('result'); renderItems(); openFoods();
+    if (!j.found) {
+      showSheetError('Could not find the nutrition panel for that product. Try Scan a label with the packet instead.');
+      return;
+    }
+    $('#linkIn').value = '';
+    foodEditId = '';
+    fillLabelForm({ name: j.name, serving_label: j.serving_label, serving_g: Number(j.serving_g) || 0,
+      kcal: j.kcal_100g, p: j.protein_100g, c: j.carbs_100g, f: j.fat_100g });
+    if (j.source) toast('From ' + j.source + ' \u00b7 check, then save');
+  } catch(err) {
+    if (!session || err.name === 'AbortError') return;
+    setSheetState('result'); renderItems(); openFoods();
+    showSheetError(err.message);
+  }
+}
+$('#linkGo').addEventListener('click', () => getFromLink($('#linkIn').value));
+$('#linkIn').addEventListener('keydown', e => { if (e.key === 'Enter') getFromLink($('#linkIn').value); });
 async function scanLabel(file){
   if (!session || !file) return;
   setSheetState('busy', 'Reading the label');
@@ -2952,12 +3024,13 @@ function applyEstimate(est){
   session.question = est.question;
 }
 /* Countable items carry a unit ("tender"), a count and the weight of one. */
-const MEASURE_UNITS = /^(g|grams?|kg|ml|mls|l|litres?|liters?|oz|serve|serves|serving|servings|portion)$/i;
+const MEASURE_UNITS = /^(g|grams?|gm|kg|ml|mls|l|litres?|liters?|oz)$/i;
+const singular = u => /(ss|us)$/.test(u) ? u : /(ches|shes|xes|sses)$/.test(u) ? u.slice(0, -2) : /ies$/.test(u) ? u.slice(0, -3) + 'y' : /s$/.test(u) ? u.slice(0, -1) : u;
 function withUnit(it, unit, count){
   unit = String(unit || '').trim().toLowerCase();
   count = Number(count) || 0;
   if (unit && !MEASURE_UNITS.test(unit) && count > 0 && it.grams > 0) {
-    it.unit = unit.replace(/s$/, '') || unit;
+    it.unit = singular(unit) || unit;
     it.count = r1(count);
     it.unitG = it.grams / count;
   }
@@ -2967,12 +3040,12 @@ function withUnit(it, unit, count){
 function inferUnit(it){
   if (it.unit && it.count) return withUnit(it, it.unit, it.count);
   const m = /\((\d+(?:\.\d+)?)\s*(?:x\s*)?([a-z]+)?\)\s*$/i.exec(it.name || '') || /^(\d+(?:\.\d+)?)\s*(?:x\s*)?([a-z]+)?\s+/i.exec(it.name || '');
-  if (!m) return it;
-  const word = (m[2] || '').toLowerCase();
-  if (word && (MEASURE_UNITS.test(word) || /^(cup|cups|tbsp|tsp|tablespoons?|teaspoons?)$/.test(word))) return it;
-  return withUnit(it, word || 'piece', Number(m[1]));
+  const word = m ? (m[2] || '').toLowerCase() : '';
+  if (m && !(word && MEASURE_UNITS.test(word))) return withUnit(it, word || 'piece', Number(m[1]));
+  /* Nothing countable in the name: offer serves, with today's amount as 1 serve. */
+  return withUnit(it, 'serve', 1);
 }
-const plural = (n, u) => u + (Number(n) === 1 || /s$/.test(u) ? '' : (/(ch|sh|x)$/.test(u) ? 'es' : 's'));
+const plural = (n, u) => Number(n) === 1 || /^(tbsp|tsp)$/.test(u) ? u : /(s|x|z|ch|sh)$/.test(u) ? u + 'es' : /[^aeiou]y$/.test(u) ? u.slice(0, -1) + 'ies' : u + 's';
 function sessionItemsFrom(items){
   return items.map(i => {
     const grams = Math.max(1, Number(i.grams) || 1);
@@ -3041,6 +3114,7 @@ $('#descBtn').addEventListener('click', async () => {
   if (!session) return;
   const t = $('#descIn').value.trim();
   if (!t) { $('#descIn').focus(); return; }
+  if (/^https?:\/\/\S+$/i.test(t)) { setSheetState('result'); renderItems(); openFoods(); getFromLink(t); return; }
   session.desc = t;
   setSheetState('busy', 'Working it out');
   try {
