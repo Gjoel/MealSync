@@ -137,6 +137,27 @@ textarea{width:100%; resize:vertical;}
 .dd-day{display:flex; justify-content:space-between; gap:8px; width:100%; text-align:left; background:none; border:none;
   border-bottom:1px solid var(--line); padding:9px 0; font-size:14px; color:var(--porcelain);}
 .dd-day span:last-child{font-family:var(--mono); font-size:12px; color:var(--ash); flex:none;}
+.pl-day{border:1px solid var(--line); border-radius:14px; padding:10px 12px; margin-top:10px; background:var(--iron2);}
+.pl-day.today{border-color:var(--flame);}
+.pl-head{display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap;}
+.pl-head b{font-size:15px;}
+.pl-head span{font-family:var(--mono); font-size:11px; color:var(--ash);}
+.pl-head span.over{color:var(--zover, #c0392b);}
+.pl-m{display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--line); font-size:14px;}
+.pl-m:last-of-type{border-bottom:0;}
+.pl-slot{font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--ash); width:64px; flex-shrink:0;}
+.pl-name{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.pl-m.done .pl-name{text-decoration:line-through; color:var(--ash);}
+.pl-k{font-family:var(--mono); font-size:12px; color:var(--ash);}
+.pl-m button{width:26px; height:26px; border-radius:50%; color:var(--ash); font-size:16px; padding:0; background:transparent;}
+.pl-add{width:100%; margin-top:8px; font-size:14px;}
+.shop-i{display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line); font-size:14px;}
+.shop-i input{width:20px; height:20px; flex-shrink:0; accent-color:var(--flame);}
+.shop-i span{flex:1; min-width:0;}
+.shop-i em{font-style:normal; font-family:var(--mono); font-size:11px; color:var(--ash); display:block;}
+.shop-i a{font-family:var(--mono); font-size:11px; color:var(--flame); text-decoration:none; flex-shrink:0;}
+.shop-i.got span{text-decoration:line-through; color:var(--ash);}
+.fav-chip.plan{border-color:var(--flame);}
 .inbox{margin:4px 0 14px;}
 .ib{background:var(--iron2); border:1px solid var(--flame); border-radius:16px; padding:12px 14px; margin-bottom:8px; text-align:left;}
 .ib-txt{font-size:14px; line-height:1.45;}
@@ -565,6 +586,7 @@ select{-webkit-appearance:none; appearance:none;
 
 <div class="favrow" id="favRow" hidden></div>
 <div class="favrow" id="usualRow" hidden></div>
+<div class="favrow" id="planRow" hidden></div>
 
 <section id="mealList" class="meals"></section>
 
@@ -851,6 +873,7 @@ select{-webkit-appearance:none; appearance:none;
       </button>
     </div>
     <div class="set-note" id="sugIntro" style="margin-top:-8px"></div>
+    <button id="planOpen" class="primary" style="width:100%; margin-top:12px">Plan the week &amp; shopping list</button>
     <div class="eyebrow">For the rest of today</div>
     <div id="sugToday"></div>
     <button id="sugAsk" class="ghost small">Ask Claude for meal ideas</button>
@@ -863,6 +886,28 @@ select{-webkit-appearance:none; appearance:none;
     <div id="sugMeals"></div>
     <div class="eyebrow">Watch out for</div>
     <div id="sugWatch"></div>
+  </div>
+</div>
+
+<!-- ======== week plan sheet ======== -->
+<div id="planSheet" class="sheet">
+  <div class="sheet-card">
+    <div class="sheet-title">
+      <h2>Week plan</h2>
+      <button id="planClose" class="icon-btn" aria-label="Close week plan">
+        <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="set-note" style="margin-top:-8px">Built from your usual meals and the meals from your good days. Planned meals show on the main screen that day, so logging is one tap.</div>
+    <div class="foot-btns" style="margin-top:10px">
+      <button id="planFill" class="ghost" style="flex:1">Fill empty days</button>
+      <button id="planClear" class="ghost" style="flex:1">Clear week</button>
+    </div>
+    <div id="planDays"></div>
+    <div class="eyebrow">Shopping list</div>
+    <div class="set-note" style="margin-top:0">Everything in the plan from today on, added up. Tick what you already have.</div>
+    <div id="shopList"></div>
+    <button id="shopCopy" class="ghost small">Copy list</button>
   </div>
 </div>
 
@@ -1157,6 +1202,15 @@ const DKEY = 'ml.foods';
 /* Ids of deleted meals, exercise, favourites and foods, so a merge never brings them back. */
 const XKEY = 'ml.deleted';
 const BKEY = 'ml.body';
+const PKEY = 'ml.plan';
+function getPlan(){ try { const p = JSON.parse(localStorage.getItem(PKEY)) || {}; p.days = p.days || {}; p.got = p.got || {}; return p; } catch(e){ return { days: {}, got: {} }; } }
+function setPlan(pl){
+  const cut = isoAdd(todayISO(), -7);
+  Object.keys(pl.days).forEach(d => { if (d < cut || !(pl.days[d] || []).length) delete pl.days[d]; });
+  pl.u = Date.now();
+  localStorage.setItem(PKEY, JSON.stringify(pl));
+  pushSoon();
+}
 function getBody(){ try { return JSON.parse(localStorage.getItem(BKEY)) || {}; } catch(e){ return {}; } }
 function setBody(b){ localStorage.setItem(BKEY, JSON.stringify(b)); pushSoon(); }
 function getDeleted(){ try { return JSON.parse(localStorage.getItem(XKEY)) || {}; } catch(e){ return {}; } }
@@ -2113,6 +2167,192 @@ $('#dashSheet').addEventListener('click', e => {
 let sugCache = [];
 function mealKey(m){ return foodKey(m.name) || foodKey((m.items[0] || {}).name); }
 
+/* ================= week plan and shopping list ================= */
+const slotOf = t => !t ? 'Meal' : t < '10:30' ? 'Breakfast' : t < '15:00' ? 'Lunch' : t < '16:30' ? 'Snack' : 'Dinner';
+const SLOT_ORDER = { Breakfast: 0, Lunch: 1, Snack: 2, Dinner: 3, Meal: 4 };
+/* Meals to plan from: favourites, meals from good days and meals you eat often. */
+function planCandidates(){
+  const st = getSettings(), log = getLog(), exlog = getEx(), today = todayISO();
+  const pg = Number(st.pgoal) || 0;
+  const out = {};
+  const add = (name, items, time, tag, weight) => {
+    const k = foodKey(name) || foodKey((items[0] || {}).name);
+    if (!k || GENERIC_MEAL.test(k) || !items.length) return;
+    const t = sumItems(items);
+    const e = out[k] = out[k] || { k: k, name: name, items: items, kcal: t.kcal, p: t.p, times: [], tags: new Set(), score: 0 };
+    if (time) e.times.push(time);
+    e.tags.add(tag); e.score += weight;
+  };
+  getFavs().forEach(f => add(f.name, f.items, '', 'favourite', 3));
+  lastNDaysEnding(today, 60).filter(d => d !== today && (log[d] || []).length).forEach(d => {
+    const r = dayFacts(st, log, exlog, d);
+    const good = r.burn && r.kcal >= 900 && (r.zone === 'lose' || r.zone === 'fast') && (!pg || r.p >= pg * 0.85);
+    log[d].forEach(m => add(m.name, m.items, m.time, good ? 'good day' : 'often', good ? 2 : 1));
+  });
+  return Object.values(out).map(e => {
+    const ts = e.times.slice().sort();
+    e.slot = ts.length ? slotOf(ts[Math.floor(ts.length / 2)]) : 'Meal';
+    e.tag = e.tags.has('good day') ? 'good day' : e.tags.has('favourite') ? 'favourite' : 'often';
+    return e;
+  }).filter(e => e.score >= 2).sort((a, b) => b.score - a.score);
+}
+function planEntry(c, slot){
+  return { id: uid(), slot: slot || c.slot, name: c.name, items: JSON.parse(JSON.stringify(c.items)), kcal: r0(c.kcal), p: r0(c.p) };
+}
+function planWeek(){ return Array.from({ length: 7 }, (_, i) => isoAdd(todayISO(), i)); }
+/* Fill empty days: for each slot pick what you usually eat on that weekday,
+   then good-day meals, without repeating one meal more than twice in the week. */
+function fillPlan(){
+  const pl = getPlan(), cands = planCandidates();
+  const used = {};
+  planWeek().forEach(d => (pl.days[d] || []).forEach(m => { const k = foodKey(m.name); used[k] = (used[k] || 0) + 1; }));
+  let filled = 0;
+  planWeek().forEach(d => {
+    if ((pl.days[d] || []).length || (getLog()[d] || []).length) return;
+    const usual = usualMeals(d).map(u => ({ k: mealKey(u.last), slot: slotOf(u.last.time) }));
+    const day = [];
+    ['Breakfast', 'Lunch', 'Dinner'].forEach(slot => {
+      /* Breakfasts and lunches can repeat all week; dinners get variety (twice each, three times if options run out). */
+      const ok = (c, lim) => c.slot === slot && (slot !== 'Dinner' || (used[c.k] || 0) < lim) && !day.some(x => foodKey(x.name) === c.k);
+      const pickWith = lim => usual.filter(u => u.slot === slot).map(u => cands.find(c => c.k === u.k)).find(c => c && ok(c, lim)) ||
+        cands.find(c => ok(c, lim) && c.tag === 'good day') || cands.find(c => ok(c, lim));
+      const pick = pickWith(2) || pickWith(3);
+      if (!pick) return;
+      used[pick.k] = (used[pick.k] || 0) + 1;
+      day.push(planEntry(pick, slot));
+    });
+    if (day.length) { pl.days[d] = day; filled++; }
+  });
+  setPlan(pl);
+  return filled;
+}
+function shoppingList(pl){
+  const by = {};
+  planWeek().forEach(d => (pl.days[d] || []).filter(m => !m.done).forEach(m => (m.items || []).forEach(i => {
+    const k = foodKey(i.name);
+    if (!k || /^(water|tap water|ice)$/.test(k)) return;
+    const e = by[k] = by[k] || { k: k, name: cap(String(i.name).replace(/\(.*?\)/g, '').trim() || k), g: 0, units: {} };
+    e.g += Number(i.grams) || 0;
+    if (i.unit && Number(i.count) > 0 && i.unit !== 'serve') e.units[i.unit] = (e.units[i.unit] || 0) + Number(i.count);
+  })));
+  return Object.values(by).sort((a, b) => a.name.localeCompare(b.name)).map(e => {
+    const u = Object.keys(e.units)[0];
+    const wet = /milk|juice|drink|soda|cola|beer|wine|stock|broth/.test(e.k);
+    e.qty = (u ? r1(e.units[u]) + ' ' + plural(r1(e.units[u]), u) + ' · ' : '') +
+      (e.g >= 1000 ? r1(e.g / 1000) + (wet ? ' L' : ' kg') : r0(e.g) + (wet ? ' mL' : ' g'));
+    return e;
+  });
+}
+let planCands = [];
+function renderPlan(){
+  const pl = getPlan(), st = getSettings(), log = getLog();
+  planCands = planCandidates();
+  const goal = goalFor(st);
+  const pg = Number(st.pgoal) || 0;
+  const z = tc().z;
+  $('#planSheet').style.setProperty('--zover', z.over);
+  const opts = '<option value="">+ Add a meal</option>' + planCands.slice(0, 30).map((c, i) =>
+    '<option value="' + i + '">' + esc(c.name) + ' · ' + nf.format(r0(c.kcal)) + ' kcal' + (c.tag === 'good day' ? ' ★' : '') + '</option>').join('');
+  $('#planDays').innerHTML = planWeek().map(d => {
+    const ms = (pl.days[d] || []).slice().sort((a, b) => SLOT_ORDER[a.slot] - SLOT_ORDER[b.slot]);
+    const tk = ms.reduce((a, m) => a + (Number(m.kcal) || 0), 0), tp = ms.reduce((a, m) => a + (Number(m.p) || 0), 0);
+    const logged = (log[d] || []).length;
+    const dd = new Date(d + 'T12:00:00');
+    const head = (d === todayISO() ? 'Today' : dd.toLocaleDateString('en-AU', { weekday: 'long' })) + ' ' + dd.getDate();
+    const sum = ms.length ? nf.format(r0(tk)) + ' kcal · ' + r0(tp) + ' g protein' + (goal ? ' / ' + nf.format(goal) : '') : (logged ? logged + ' meal' + (logged === 1 ? '' : 's') + ' logged' : 'nothing planned');
+    return '<div class="pl-day' + (d === todayISO() ? ' today' : '') + '"><div class="pl-head"><b>' + head + '</b><span class="' + (goal && tk > goal + 150 ? 'over' : '') + '">' + sum + '</span></div>' +
+      ms.map(m => '<div class="pl-m' + (m.done ? ' done' : '') + '"><span class="pl-slot">' + m.slot + '</span><span class="pl-name">' + esc(m.name) + '</span>' +
+        '<span class="pl-k">' + nf.format(r0(m.kcal)) + '</span><button data-pldel="' + d + '|' + m.id + '" aria-label="Remove">&times;</button></div>').join('') +
+      (pg && ms.length >= 2 && tp < pg * 0.8 ? '<div class="prod-note" style="padding:6px 0 0">Light on protein: ' + r0(pg - tp) + ' g short. Add a shake or swap in a chicken meal.</div>' : '') +
+      '<select class="pl-add" data-pladd="' + d + '">' + opts + '</select></div>';
+  }).join('');
+  const list = shoppingList(pl);
+  $('#shopList').innerHTML = list.length ? list.map(e => '<label class="shop-i' + (pl.got[e.k] ? ' got' : '') + '"><input type="checkbox" data-shop="' + esc(e.k) + '"' + (pl.got[e.k] ? ' checked' : '') + '>' +
+    '<span>' + esc(e.name) + '<em>' + e.qty + '</em></span>' +
+    '<a href="https://www.coles.com.au/search/products?q=' + encodeURIComponent(e.k) + '" target="_blank" rel="noopener">Coles &rsaquo;</a></label>').join('')
+    : '<div class="prod-note">Plan some meals and the ingredients add up here.</div>';
+  $('#shopCopy').hidden = !list.length;
+}
+function openPlan(){ renderPlan(); $('#planSheet').classList.add('open'); }
+$('#planOpen').addEventListener('click', () => { $('#sugSheet').classList.remove('open'); openPlan(); });
+$('#planClose').addEventListener('click', () => { $('#planSheet').classList.remove('open'); renderDay(); });
+$('#planFill').addEventListener('click', () => {
+  const n = fillPlan();
+  renderPlan();
+  toast(n ? 'Planned ' + n + ' day' + (n === 1 ? '' : 's') : planCandidates().length ? 'Every day already has meals' : 'Log a couple of weeks first, so there are meals to plan from');
+});
+$('#planClear').addEventListener('click', () => {
+  if (!confirm('Clear the plan for the next 7 days?')) return;
+  const pl = getPlan();
+  planWeek().forEach(d => delete pl.days[d]);
+  pl.got = {};
+  setPlan(pl);
+  renderPlan();
+});
+$('#planDays').addEventListener('click', e => {
+  const del = e.target.closest('[data-pldel]');
+  if (!del) return;
+  const [d, id] = del.dataset.pldel.split('|');
+  const pl = getPlan();
+  pl.days[d] = (pl.days[d] || []).filter(m => m.id !== id);
+  setPlan(pl);
+  renderPlan();
+});
+$('#planDays').addEventListener('change', e => {
+  const sel = e.target.closest('[data-pladd]');
+  if (!sel || sel.value === '') return;
+  const c = planCands[Number(sel.value)];
+  if (!c) return;
+  const pl = getPlan(), d = sel.dataset.pladd;
+  const taken = new Set((pl.days[d] || []).map(m => m.slot));
+  const slot = c.slot !== 'Meal' && !taken.has(c.slot) ? c.slot : ['Breakfast', 'Lunch', 'Dinner', 'Snack'].find(x => !taken.has(x)) || 'Snack';
+  (pl.days[d] = pl.days[d] || []).push(planEntry(c, slot));
+  setPlan(pl);
+  renderPlan();
+});
+$('#shopList').addEventListener('change', e => {
+  const cb = e.target.closest('[data-shop]');
+  if (!cb) return;
+  const pl = getPlan();
+  if (cb.checked) pl.got[cb.dataset.shop] = 1; else delete pl.got[cb.dataset.shop];
+  setPlan(pl);
+  cb.closest('.shop-i').classList.toggle('got', cb.checked);
+});
+$('#shopCopy').addEventListener('click', async () => {
+  const pl = getPlan();
+  const txt = 'Shopping list\n' + shoppingList(pl).filter(e => !pl.got[e.k]).map(e => '- ' + e.name + ': ' + e.qty.replace(' · ', ' (') + (e.qty.includes(' · ') ? ')' : '')).join('\n');
+  try { await navigator.clipboard.writeText(txt); toast('List copied'); }
+  catch(err) { if (navigator.share) navigator.share({ text: txt }).catch(() => {}); else toast('Could not copy'); }
+});
+/* Main screen: the day's planned meals as one-tap chips. */
+function renderPlanRow(){
+  const row = $('#planRow');
+  const ms = (getPlan().days[viewDate] || []).filter(m => !m.done).sort((a, b) => SLOT_ORDER[a.slot] - SLOT_ORDER[b.slot]);
+  if (!ms.length) { row.hidden = true; row.innerHTML = ''; return; }
+  row.hidden = false;
+  row.innerHTML = '<span class="fav-lbl" data-plopen="1" style="cursor:pointer">Planned<br>' + (viewDate === todayISO() ? 'today' : dayName(viewDate).slice(0, 3)) + ' &rsaquo;</span>' +
+    ms.map(m => '<button class="fav-chip plan" data-plan="' + m.id + '"><span class="fc-name">' + esc(m.name) + '</span><span class="fc-kcal">' + nf.format(r0(m.kcal)) + '</span></button>').join('');
+}
+$('#planRow').addEventListener('click', e => {
+  if (e.target.closest('[data-plopen]')) { openPlan(); return; }
+  const chip = e.target.closest('[data-plan]');
+  if (!chip) return;
+  const pl = getPlan();
+  const m = (pl.days[viewDate] || []).find(x => x.id === chip.dataset.plan);
+  if (!m) return;
+  const log = getLog();
+  const items = JSON.parse(JSON.stringify(m.items));
+  (log[viewDate] = log[viewDate] || []).push({
+    id: uid(), u: Date.now(), name: m.name, time: nowHM(), thumb: '', favId: '', confidence: '', assumptions: [], items: items,
+    ...(items.some(i => NX_KEYS.some(k => Number(i[k]) > 0)) ? { nx: 1 } : {})
+  });
+  setLog(log);
+  m.done = true;
+  setPlan(pl);
+  renderDay();
+  toast('Logged ' + m.name);
+});
+
 /* ================= usual meals for the day of the week ================= */
 /* Learns what you tend to eat on this weekday (and on weekdays or weekends in
    general) over the last 10 weeks, weighting recent weeks more. Meals already
@@ -2798,6 +3038,7 @@ function renderDay(){
   renderWellRow();
   renderNudges(st, log, info, burned);
   renderUsualRow();
+  renderPlanRow();
 
   const favSet = new Set(getFavs().map(f => f.id));
   const list = $('#mealList');
@@ -4355,6 +4596,10 @@ async function mergeFromCloud(){
   const weights = Object.assign({}, (r.weights && r.weights.data) || {}, getWeights());
   const body = Object.assign({}, (r.body && r.body.data) || {}, getBody());
   localStorage.setItem(BKEY, JSON.stringify(body));
+  /* The plan is one document: the newest edit wins. */
+  const lp = getPlan();
+  const plan = r.plan && r.plan.data && Number(r.plan.data.u) > (Number(lp.u) || 0) ? r.plan.data : lp;
+  if (plan !== lp) localStorage.setItem(PKEY, JSON.stringify(plan));
   localStorage.setItem(XKEY, JSON.stringify(del));
   localStorage.setItem(LKEY, JSON.stringify(log));
   localStorage.setItem(EKEY, JSON.stringify(ex));
@@ -4368,7 +4613,7 @@ async function mergeFromCloud(){
   const s2 = getSettings();
   s2.syncLast = last;
   localStorage.setItem(SKEY, JSON.stringify(s2));
-  const changedHere = JSON.stringify([log, ex, favs, foods, weights, body]) !== before;
+  const changedHere = JSON.stringify([log, ex, favs, foods, weights, body]) !== before || plan !== lp;
   const cloudSame = r.log && r.exercise && r.favs && r.foods && r.weights && r.deleted &&
     JSON.stringify(stripLogForSync(log)) === JSON.stringify(r.log.data) &&
     JSON.stringify(ex) === JSON.stringify(r.exercise.data) &&
@@ -4376,7 +4621,8 @@ async function mergeFromCloud(){
     JSON.stringify(foods) === JSON.stringify(r.foods.data) &&
     JSON.stringify(weights) === JSON.stringify(r.weights.data) &&
     JSON.stringify(del) === JSON.stringify(r.deleted.data) &&
-    (!Object.keys(body).length || (r.body && JSON.stringify(body) === JSON.stringify(r.body.data)));
+    (!Object.keys(body).length || (r.body && JSON.stringify(body) === JSON.stringify(r.body.data))) &&
+    (!plan.u || (r.plan && Number(r.plan.data.u) === Number(plan.u)));
   return { changedHere: changedHere, needPush: !cloudSame };
 }
 
@@ -4399,7 +4645,7 @@ async function doPush(){
     const kinds = {
       log: stripLogForSync(getLog()), exercise: getEx(), weights: getWeights(),
       favs: stripFavsForSync(getFavs()), profile: profileLite(getSettings()),
-      foods: getFoods(), deleted: getDeleted(), body: getBody()
+      foods: getFoods(), deleted: getDeleted(), body: getBody(), plan: getPlan()
     };
     for (const k of Object.keys(kinds)) {
       await supa('cc_push_state', { p_handle: c.handle, p_pass: c.pass, p_kind: k, p_data: kinds[k], p_updated: stamp });
