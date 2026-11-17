@@ -137,6 +137,12 @@ textarea{width:100%; resize:vertical;}
 .dd-day{display:flex; justify-content:space-between; gap:8px; width:100%; text-align:left; background:none; border:none;
   border-bottom:1px solid var(--line); padding:9px 0; font-size:14px; color:var(--porcelain);}
 .dd-day span:last-child{font-family:var(--mono); font-size:12px; color:var(--ash); flex:none;}
+.xrow{display:flex; flex-wrap:wrap; justify-content:center; gap:6px; margin-top:10px;}
+.xrow span{font-family:var(--mono); font-size:11px; color:var(--ash); background:var(--iron2); border:1px solid var(--line);
+  border-radius:999px; padding:4px 10px; cursor:pointer;}
+.xrow b{color:var(--porcelain); font-weight:600;}
+.xrow span.hi b{color:var(--zover, #e5484d);}
+.xrow span.ok b{color:var(--zlose, #46a758);}
 .well{display:flex; flex-wrap:wrap; justify-content:center; gap:4px 14px; margin-top:10px; font-family:var(--mono); font-size:11px; color:var(--ash);}
 .well b{color:var(--porcelain); font-weight:600;}
 .nudges{margin-top:10px; background:var(--iron2); border:1px solid var(--line); border-radius:14px; padding:11px 12px 6px; text-align:left;}
@@ -335,6 +341,8 @@ textarea{width:100%; resize:vertical;}
 .qty span{font-family:var(--mono); font-size:11px; color:var(--flame); max-width:64px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .item-top .i-name{min-width:0;}
 .num.t input{width:84px;}
+.i-x{font-family:var(--mono); font-size:10.5px; color:var(--ash); margin-top:6px;}
+.i-x:empty{display:none;}
 .i-note{font-size:12.5px; color:var(--ash); margin-top:8px; line-height:1.45;}
 .assume{margin:8px 0 0; padding-left:18px; color:var(--ash); font-size:13.5px; line-height:1.55;}
 .assume li{margin-bottom:4px;}
@@ -516,6 +524,7 @@ select{-webkit-appearance:none; appearance:none;
       <div class="mt-sub" id="tsF">0% kcal</div>
     </div>
   </div>
+  <div class="xrow" id="xRow" hidden></div>
   <div class="well" id="wellRow" hidden></div>
   <div class="nudges" id="nudges" hidden>
     <div class="wk-head"><span>Heads up</span><span></span></div>
@@ -655,6 +664,11 @@ select{-webkit-appearance:none; appearance:none;
             <div class="num m"><label>C g</label><input id="lblC" type="number" step="any" inputmode="decimal"></div>
             <div class="num m"><label>F g</label><input id="lblF" type="number" step="any" inputmode="decimal"></div>
           </div>
+          <div class="item-nums" style="margin-top:4px">
+            <div class="num k"><label>sodium mg</label><input id="lblNa" type="number" step="any" inputmode="decimal"></div>
+            <div class="num m"><label>sugar g</label><input id="lblSug" type="number" step="any" inputmode="decimal"></div>
+            <div class="num m"><label>fibre g</label><input id="lblFib" type="number" step="any" inputmode="decimal"></div>
+          </div>
           <button id="lblSave" class="primary">Save to my foods</button>
         </div>
       </div>
@@ -774,6 +788,11 @@ select{-webkit-appearance:none; appearance:none;
     <div class="set-note" style="margin:8px 0 0">Tap a day, or a zone below, for a summary.</div>
     <div class="dz" id="dashZones"></div>
     <div id="dashDetail"></div>
+    <div id="dashNxWrap" hidden>
+      <div class="eyebrow">Fibre, sugar, salt &amp; alcohol</div>
+      <div class="ins-grid" id="dashNx" style="margin-top:0"></div>
+      <div id="dashNxTips"></div>
+    </div>
     <div id="dashWellWrap" hidden>
       <div class="eyebrow">Sleep &amp; stress</div>
       <div class="ins-grid" id="dashWell" style="margin-top:0"></div>
@@ -1138,9 +1157,11 @@ Method:
 9. If the user supplies a correction or extra detail, treat it as ground truth and re-estimate everything consistently with it.
 10. Give every item the household unit a person would count it in, set "unit" to that singular word and "count" to how many, so the user can adjust by number instead of grams. Use count units for countable food (biscuit, slice, tender, egg, hash brown, nugget, roll, can, bottle, scoop, piece, wrap, burger, slice of pizza) and household measures for the rest (cup, bowl, glass, tbsp, tsp, handful, plate, serve). Use "serve" only when nothing more specific fits. grams is always the total weight.
 11. Give the meal a short, natural name for what was actually eaten, the way a person would say it, e.g. "Pepperoni pizza", "Chicken & chipotle sandwich", "Vegemite toast", "Beef taco cups". Never a time-of-day word like Breakfast, Lunch, Dinner or Snack.
+12. For every item also give sodium_mg (milligrams of sodium), sugar_g (total sugars) and fibre_g (dietary fibre), from the label if one is visible, otherwise from the same composition data.
+13. std_drinks is the number of Australian standard drinks (10 g of pure alcohol) in an alcoholic drink, and 0 for everything else. For reference: 375 mL full-strength beer (4.8%) is about 1.4, 375 mL mid-strength is about 1.0, a 150 mL glass of wine is about 1.5, a 30 mL nip of spirits is 1.0, a 375 mL premix can (7%) is about 2.1.
 
 Respond with ONLY a single JSON object. No markdown, no code fences, no commentary. Exactly this shape:
-{"meal_name":"short name of the dish","items":[{"name":"...","grams":0,"unit":"","count":0,"kcal":0,"protein_g":0,"carbs_g":0,"fat_g":0,"note":"one short assumption for this item, or empty string"}],"confidence":"high|medium|low","assumptions":["..."],"question":"the single short question that would most improve accuracy, or empty string"}`;
+{"meal_name":"short name of the dish","items":[{"name":"...","grams":0,"unit":"","count":0,"kcal":0,"protein_g":0,"carbs_g":0,"fat_g":0,"sodium_mg":0,"sugar_g":0,"fibre_g":0,"std_drinks":0,"note":"one short assumption for this item, or empty string"}],"confidence":"high|medium|low","assumptions":["..."],"question":"the single short question that would most improve accuracy, or empty string"}`;
 
 const EXSYS = `You turn exercise descriptions or pasted fitness app summaries (Strava, Garmin, Apple Watch and similar) into structured activities.
 
@@ -1163,10 +1184,11 @@ Method:
 3. serving_g is the stated serving size in grams (treat mL as grams), or 0 if none. serving_label is what one serving is in plain words, e.g. "piece", "slice", "scoop", "bar", or "serve" if it is just a weight.
 4. name is a short product name with the brand in brackets, e.g. "P30 protein powder, vanilla (Musashi)".
 5. source is the website the numbers came from, e.g. "coles.com.au".
-6. If you cannot find a trustworthy panel for this exact product, set found to false. Never guess numbers.
+6. sodium_mg_100g is sodium in mg per 100 g, sugars_100g is total sugars, fibre_100g is dietary fibre; 0 for any the panel does not list.
+7. If you cannot find a trustworthy panel for this exact product, set found to false. Never guess numbers.
 
 Respond with ONLY a single JSON object, no other text:
-{"found":true,"name":"","serving_g":0,"serving_label":"","kcal_100g":0,"protein_100g":0,"carbs_100g":0,"fat_100g":0,"source":""}`;
+{"found":true,"name":"","serving_g":0,"serving_label":"","kcal_100g":0,"protein_100g":0,"carbs_100g":0,"fat_100g":0,"sodium_mg_100g":0,"sugars_100g":0,"fibre_100g":0,"source":""}`;
 /* Reads a product page link with Claude's web fetch and web search tools.
    Server tools can't be combined with the JSON schema mode, so the reply is
    plain JSON text; "pause_turn" means the server loop needs another request. */
@@ -1206,17 +1228,19 @@ Rules:
 3. serving_g is the stated serving size in grams (treat mL as grams), or 0 if none is shown.
 4. serving_label is what one serving is in plain words, e.g. "piece", "slice", "cup", "bar". If the serving is just a weight, use "serve".
 5. name is a short product name with the brand in brackets if visible, e.g. "Hash brown (Your Spud Co)".
-6. If no nutrition panel is readable, set found to false and use 0 or empty strings for the rest.
+6. sodium_mg_100g is sodium in mg per 100 g, sugars_100g is total sugars, fibre_100g is dietary fibre. Use 0 for any the panel does not list.
+7. If no nutrition panel is readable, set found to false and use 0 or empty strings for the rest.
 
 Respond with ONLY a single JSON object in the requested shape.`;
 const LABEL_SCHEMA = {
   type: 'object', additionalProperties: false,
-  required: ['found', 'name', 'serving_g', 'serving_label', 'kcal_100g', 'protein_100g', 'carbs_100g', 'fat_100g'],
+  required: ['found', 'name', 'serving_g', 'serving_label', 'kcal_100g', 'protein_100g', 'carbs_100g', 'fat_100g', 'sodium_mg_100g', 'sugars_100g', 'fibre_100g'],
   properties: {
     found: { type: 'boolean' }, name: { type: 'string' },
     serving_g: { type: 'number' }, serving_label: { type: 'string' },
     kcal_100g: { type: 'number' }, protein_100g: { type: 'number' },
-    carbs_100g: { type: 'number' }, fat_100g: { type: 'number' }
+    carbs_100g: { type: 'number' }, fat_100g: { type: 'number' },
+    sodium_mg_100g: { type: 'number' }, sugars_100g: { type: 'number' }, fibre_100g: { type: 'number' }
   }
 };
 const MEAL_SCHEMA = {
@@ -1226,11 +1250,12 @@ const MEAL_SCHEMA = {
     meal_name: { type: 'string' },
     items: { type: 'array', items: {
       type: 'object', additionalProperties: false,
-      required: ['name', 'grams', 'unit', 'count', 'kcal', 'protein_g', 'carbs_g', 'fat_g', 'note'],
+      required: ['name', 'grams', 'unit', 'count', 'kcal', 'protein_g', 'carbs_g', 'fat_g', 'sodium_mg', 'sugar_g', 'fibre_g', 'std_drinks', 'note'],
       properties: {
         name: { type: 'string' }, grams: { type: 'number' }, unit: { type: 'string' }, count: { type: 'number' },
         kcal: { type: 'number' },
         protein_g: { type: 'number' }, carbs_g: { type: 'number' }, fat_g: { type: 'number' },
+        sodium_mg: { type: 'number' }, sugar_g: { type: 'number' }, fibre_g: { type: 'number' }, std_drinks: { type: 'number' },
         note: { type: 'string' }
       }
     } },
@@ -1370,12 +1395,14 @@ async function callClaude(userText){
   const items = (Array.isArray(j.items) ? j.items : []).map(it => {
     const grams = Math.max(1, r0(it.grams));
     const kcal = r0(it.kcal), p = r1(it.protein_g), c = r1(it.carbs_g), f = r1(it.fat_g);
-    return withUnit({
+    const nx = { na: r0(Math.max(0, Number(it.sodium_mg) || 0)), sug: r1(Math.max(0, Number(it.sugar_g) || 0)),
+                 fib: r1(Math.max(0, Number(it.fibre_g) || 0)), alc: r1(Math.max(0, Number(it.std_drinks) || 0)) };
+    return withUnit(Object.assign({
       id: uid(), name: String(it.name || 'Item'),
       grams: grams, kcal: kcal, p: p, c: c, f: f,
-      note: String(it.note || ''),
-      basis: { kcal: kcal / grams, p: p / grams, c: c / grams, f: f / grams }
-    }, it.unit || 'serve', Number(it.count) > 0 ? it.count : 1);
+      note: String(it.note || ''), hasX: true,
+      basis: Object.assign({ kcal: kcal / grams, p: p / grams, c: c / grams, f: f / grams }, nxBasis(nx, grams))
+    }, nx), it.unit || 'serve', Number(it.count) > 0 ? it.count : 1);
   });
   if (!items.length) throw new Error('No food was identified. Try a clearer photo or add more detail.');
   return {
@@ -1404,7 +1431,8 @@ async function callClaudeExercise(text){
 function prevEstimateJSON(){
   return JSON.stringify({
     items: session.items.map(i => ({
-      name: i.name, grams: i.grams, kcal: i.kcal, protein_g: i.p, carbs_g: i.c, fat_g: i.f
+      name: i.name, grams: i.grams, kcal: i.kcal, protein_g: i.p, carbs_g: i.c, fat_g: i.f,
+      sodium_mg: Number(i.na) || 0, sugar_g: Number(i.sug) || 0, fibre_g: Number(i.fib) || 0, std_drinks: Number(i.alc) || 0
     }))
   });
 }
@@ -1426,9 +1454,39 @@ function sumItems(items){
     kcal: a.kcal + (Number(i.kcal) || 0),
     p: a.p + (Number(i.p) || 0),
     c: a.c + (Number(i.c) || 0),
-    f: a.f + (Number(i.f) || 0)
-  }), { kcal: 0, p: 0, c: 0, f: 0 });
+    f: a.f + (Number(i.f) || 0),
+    na: a.na + (Number(i.na) || 0),
+    sug: a.sug + (Number(i.sug) || 0),
+    fib: a.fib + (Number(i.fib) || 0),
+    alc: a.alc + (Number(i.alc) || 0)
+  }), { kcal: 0, p: 0, c: 0, f: 0, na: 0, sug: 0, fib: 0, alc: 0 });
 }
+/* Sodium (mg), sugar (g), fibre (g) and alcohol (standard drinks) ride along with the macros. */
+const NX_KEYS = ['na', 'sug', 'fib', 'alc'];
+const nxRound = (k, v) => k === 'na' ? r0(v) : r1(v);
+/* Only non-zero extras are stored, to keep the log small. */
+function nxOut(i){
+  const o = {};
+  NX_KEYS.forEach(k => { const v = Number(i[k]) || 0; if (v > 0) o[k] = nxRound(k, v); });
+  return o;
+}
+function nxBasis(i, grams){
+  const o = {};
+  NX_KEYS.forEach(k => { o[k] = (Number(i[k]) || 0) / grams; });
+  return o;
+}
+function nxLine(it){
+  const b = [];
+  if (Number(it.na) > 0) b.push('sodium ' + nf.format(r0(it.na)) + ' mg');
+  if (Number(it.sug) > 0) b.push('sugar ' + r1(it.sug) + ' g');
+  if (Number(it.fib) > 0) b.push('fibre ' + r1(it.fib) + ' g');
+  if (Number(it.alc) > 0) b.push(r1(it.alc) + ' std drink' + (r1(it.alc) === 1 ? '' : 's'));
+  return b.join(' \u00b7 ');
+}
+const fibreTarget = st => st.sex === 'f' ? 25 : 30;
+const SODIUM_TARGET = 2000;
+/* Meals estimated or entered with the extras (older meals have none). */
+const mealHasNx = m => !!m.nx || (m.items || []).some(i => NX_KEYS.some(k => Number(i[k]) > 0));
 function currentWeightKg(){
   const w = getWeights();
   const keys = Object.keys(w).sort();
@@ -1531,6 +1589,7 @@ function renderDash(st, log, tot, burned){
   $('#tvF').innerHTML = r0(tot.f) + '<span>g</span>';
   $('#tbF').style.width = pct(fk) + '%';
   $('#tsF').textContent = pct(fk) + '% kcal';
+  renderXRow(st, log, tot);
 
   const days = lastNDaysEnding(viewDate, 7);
   $('#wkLbl').textContent = viewDate === todayISO() ? 'Last 7 days'
@@ -1795,18 +1854,43 @@ function renderZoneChart(el, st, log, days, tappable, pickAttr){
   return rows;
 }
 
+function weekDrinks(log, endIso){
+  return lastNDaysEnding(endIso, 7).reduce((a, d) => a + (log[d] || []).reduce((b, m) => b + m.items.reduce((c, i) => c + (Number(i.alc) || 0), 0), 0), 0);
+}
+function renderXRow(st, log, tot){
+  const meals = log[viewDate] || [];
+  const wk = weekDrinks(log, viewDate);
+  const el = $('#xRow');
+  if (!meals.some(mealHasNx) && !(wk > 0)) { el.hidden = true; return; }
+  const ft = fibreTarget(st);
+  const b = [];
+  b.push('<span data-m="fib" class="' + (tot.fib >= ft ? 'ok' : '') + '">fibre <b>' + r0(tot.fib) + '</b>/' + ft + ' g</span>');
+  b.push('<span data-m="sug">sugar <b>' + r0(tot.sug) + '</b> g</span>');
+  b.push('<span data-m="na" class="' + (tot.na > SODIUM_TARGET ? 'hi' : '') + '">sodium <b>' + nf.format(r0(tot.na)) + '</b>/' + nf.format(SODIUM_TARGET) + ' mg</span>');
+  if (wk > 0) b.push('<span data-m="alc" class="' + (wk > 10 ? 'hi' : '') + '">drinks <b>' + r1(tot.alc) + '</b> &middot; ' + r1(wk) + '/10 this week</span>');
+  el.hidden = false;
+  el.innerHTML = b.join('');
+  const z = tc().z;
+  el.style.setProperty('--zover', z.over); el.style.setProperty('--zlose', z.lose);
+}
+
 /* ================= breakdown: where a day's calories or macros come from ================= */
-const MACRO = { kcal: ['Calories', 'kcal', 'kcal'], p: ['Protein', 'p', 'g'], c: ['Carbs', 'c', 'g'], f: ['Fat', 'f', 'g'] };
+const MACRO = { kcal: ['Calories', 'kcal', 'kcal'], p: ['Protein', 'p', 'g'], c: ['Carbs', 'c', 'g'], f: ['Fat', 'f', 'g'],
+  fib: ['Fibre', 'fib', 'g'], sug: ['Sugar', 'sug', 'g'], na: ['Sodium', 'na', 'mg'], alc: ['Alcohol', 'alc', 'std'] };
 function openBreakdown(m){
   const spec = MACRO[m];
   if (!spec) return;
   const key = spec[1], unit = spec[2];
   const meals = getLog()[viewDate] || [];
   const total = meals.reduce((a, ml) => a + ml.items.reduce((b, i) => b + (Number(i[key]) || 0), 0), 0);
-  const fmt = v => unit === 'kcal' ? nf.format(r0(v)) + ' kcal' : r0(v) + ' g';
+  const fmt = v => unit === 'kcal' ? nf.format(r0(v)) + ' kcal' : unit === 'mg' ? nf.format(r0(v)) + ' mg'
+    : unit === 'std' ? r1(v) + ' std drink' + (r1(v) === 1 ? '' : 's') : r0(v) + ' g';
   $('#bdTitle').textContent = spec[0] + ' · ' + dateLabel(viewDate);
   const st = getSettings();
-  const goalTxt = m === 'p' && Number(st.pgoal) ? ' of your ' + st.pgoal + ' g goal' : '';
+  const goalTxt = m === 'p' && Number(st.pgoal) ? ' of your ' + st.pgoal + ' g goal'
+    : m === 'fib' ? ' of about ' + fibreTarget(st) + ' g a day'
+    : m === 'na' ? ' of the ' + nf.format(SODIUM_TARGET) + ' mg suggested limit'
+    : m === 'alc' ? ' &middot; ' + r1(weekDrinks(getLog(), viewDate)) + ' in the last 7 days (guideline: 10 a week, 4 on any day)' : '';
   $('#bdTot').innerHTML = '<b>' + fmt(total) + '</b>' + goalTxt;
   const row = (name, sub, v) => '<div class="bd-row"><div class="bd-top"><span>' + esc(name) + '</span><b>' + fmt(v) + '</b></div>' +
     '<div class="bd-sub">' + sub + (total > 0 ? ' &middot; ' + r0(100 * v / total) + '%' : '') + '</div>' +
@@ -1899,6 +1983,7 @@ function renderDashboard(){
   $('#dashFoodsK').innerHTML = top('kcal', 'kcal');
   $('#dashFoodsP').innerHTML = top('p', 'g');
   renderDashWellness(st, log, days);
+  renderDashNx(st, log, days);
 }
 /* Drill-down under the chart: one day, or every day in a zone. */
 function renderDashDetail(st, rows){
@@ -2091,6 +2176,47 @@ function wellnessFindings(st, log, days){
   }
   return { rows: rows, slept: slept, findings: out };
 }
+function renderDashNx(st, log, days){
+  const today = todayISO();
+  /* Days whose meals all carry the extras, so the averages are not diluted by older meals. */
+  const nxDays = days.filter(d => d !== today && (log[d] || []).length && log[d].every(mealHasNx));
+  const drinkDays = days.filter(d => (log[d] || []).some(m => m.items.some(i => Number(i.alc) > 0)));
+  const wrap = $('#dashNxWrap');
+  wrap.hidden = !nxDays.length && !drinkDays.length;
+  if (wrap.hidden) return;
+  const tots = nxDays.map(d => dayTotals(log, d));
+  const avg = k => tots.length ? tots.reduce((a, t) => a + (t[k] || 0), 0) / tots.length : 0;
+  const ft = fibreTarget(st);
+  const tiles = [];
+  if (nxDays.length) {
+    tiles.push(insTile('Avg fibre', r0(avg('fib')), 'g', 'target about ' + ft + ' g'));
+    tiles.push(insTile('Avg sugar', r0(avg('sug')), 'g', 'a day'));
+    tiles.push(insTile('Avg sodium', nf.format(r0(avg('na'))), 'mg', nf.format(SODIUM_TARGET) + ' mg limit'));
+  }
+  let drinks = 0, drinkKcal = 0;
+  days.forEach(d => (log[d] || []).forEach(m => m.items.forEach(i => {
+    if (Number(i.alc) > 0) { drinks += Number(i.alc); drinkKcal += Number(i.kcal) || 0; }
+  })));
+  const weeks = Math.max(1, days.length / 7);
+  tiles.push(insTile('Drinks a week', r1(drinks / weeks), 'std', '10 a week guideline'));
+  tiles.push(insTile('Drink kcal', nf.format(r0(drinkKcal / weeks)), 'kcal', 'a week'));
+  const loggedDays = days.filter(d => (log[d] || []).length);
+  tiles.push(insTile('Alcohol-free', loggedDays.length - drinkDays.filter(d => loggedDays.includes(d)).length, '/ ' + loggedDays.length, 'logged days'));
+  $('#dashNx').innerHTML = tiles.join('');
+  const tips = [];
+  if (nxDays.length >= 3) {
+    const lowF = nxDays.filter((d, i) => tots[i].fib < ft * 0.6).length;
+    if (lowF > nxDays.length / 2) tips.push('Fibre was low on <b>' + lowF + ' of ' + nxDays.length + '</b> days. A 150 g serve of frozen mixed veg adds about 5 g for 90 kcal.');
+    const hiNa = nxDays.filter((d, i) => tots[i].na > SODIUM_TARGET).length;
+    if (hiNa > nxDays.length / 2) tips.push('Sodium was over ' + nf.format(SODIUM_TARGET) + ' mg on <b>' + hiNa + ' of ' + nxDays.length + '</b> days. Sauces, processed meat and takeaway carry most of it.');
+  }
+  if (drinks > 0) {
+    const kgWk = drinkKcal / weeks / 7700;
+    tips.push('Drinks are worth about <b>' + nf.format(r0(drinkKcal / weeks)) + ' kcal a week</b> here, roughly ' + r1(kgWk * 52) + ' kg of fat a year if nothing else changed.');
+  }
+  $('#dashNxTips').innerHTML = tips.map(t => '<div class="sg-tip">' + t + '</div>').join('') ||
+    (nxDays.length ? '' : '<div class="prod-note">Fibre, sugar and sodium start counting from meals logged now; older meals did not record them.</div>');
+}
 function renderDashWellness(st, log, days){
   const w = wellnessFindings(st, log, days);
   const gd = getGarminDays();
@@ -2127,8 +2253,11 @@ function proteinPick(){
   const log = getLog();
   lastNDaysEnding(todayISO(), 21).forEach(d => (log[d] || []).forEach(m => { const t = sumItems(m.items);
     if (t.p >= 25) opts.push({ name: m.name, p: t.p, kcal: t.kcal }); }));
-  opts.sort((a, b) => (b.p / Math.max(50, b.kcal)) - (a.p / Math.max(50, a.kcal)));
-  return opts[0] || null;
+  /* Only protein-dense options (at least 25% of calories from protein), and never something already eaten today. */
+  const todays = new Set((log[todayISO()] || []).map(m => m.name));
+  const good = opts.filter(o => o.p * 4 >= 0.25 * o.kcal && !todays.has(o.name));
+  good.sort((a, b) => (b.p / Math.max(50, b.kcal)) - (a.p / Math.max(50, a.kcal)));
+  return good[0] || null;
 }
 function renderNudges(st, log, info, burned){
   const list = [];
@@ -2183,6 +2312,33 @@ function renderNudges(st, log, info, burned){
     const hint = wf.findings.find(t => /under 6.5 hours/.test(t));
     list.push([warn, 'Short night: <b>' + fmtSleep(gw.sleep_s) + '</b> of sleep. Hunger usually runs higher after one, so lead with protein and plan your evening snack.' +
       (hint ? ' ' + hint.replace(/<\/?b>/g, '') : '')]);
+  }
+
+  /* Sodium, sugar, fibre and alcohol (only for meals that carry them). */
+  if (meals.some(mealHasNx)) {
+    const items = meals.flatMap(m => m.items);
+    const topOf = k => items.slice().sort((a, b) => (Number(b[k]) || 0) - (Number(a[k]) || 0))[0];
+    if (tot.na > SODIUM_TARGET * (isToday ? 1 : 1.15)) {
+      const t = topOf('na');
+      list.push([warn, 'Sodium is <b>' + nf.format(r0(tot.na)) + ' mg</b>, over the ' + nf.format(SODIUM_TARGET) + ' mg suggested limit' +
+        (t ? ', mostly from ' + esc(t.name) : '') + '. Salt holds water, so expect the scale to read up to a kilo higher tomorrow; it is not fat.']);
+    }
+    const ft = fibreTarget(st);
+    if ((!isToday || hour >= 19) && tot.kcal > 900 && tot.fib < ft * 0.6) {
+      list.push([warn, 'Fibre is <b>' + r0(tot.fib) + ' g</b> of about ' + ft + ' g. Fibre keeps you full on fewer calories: frozen veg, beans, oats, wholegrain wraps or an apple are easy adds.']);
+    }
+    if (tot.kcal > 600 && tot.sug * 4 > tot.kcal * 0.25 && tot.sug > 60) {
+      const t = topOf('sug');
+      list.push([warn, 'Sugar is <b>' + r0(tot.sug) + ' g</b>, about ' + r0(100 * tot.sug * 4 / tot.kcal) + '% of calories' + (t ? ', mostly from ' + esc(t.name) : '') +
+        '. Swapping sugary drinks and snacks for protein keeps hunger steadier' + (st.sex === 'f' ? ', which matters more with PCOS' : '') + '.']);
+    }
+  }
+  const wkAlc = weekDrinks(log, viewDate);
+  if (tot.alc > 4) {
+    list.push([bad, '<b>' + r1(tot.alc) + ' standard drinks</b> on this day, over the guideline of 4 on any one day.']);
+  } else if (wkAlc > 10) {
+    const dk = lastNDaysEnding(viewDate, 7).reduce((a, d) => a + (log[d] || []).reduce((b, m) => b + m.items.reduce((c, i) => c + (Number(i.alc) > 0 ? Number(i.kcal) || 0 : 0), 0), 0), 0);
+    list.push([warn, '<b>' + r1(wkAlc) + ' standard drinks</b> in the last 7 days, over the guideline of 10 a week. Those drinks added about ' + nf.format(r0(dk)) + ' kcal.']);
   }
 
   /* Fat-heavy days. */
@@ -2455,7 +2611,8 @@ function toggleFav(){
       items: session.items.map(i => ({
         name: i.name || 'Item', grams: r1(i.grams), kcal: r0(i.kcal),
         p: r1(i.p), c: r1(i.c), f: r1(i.f), note: i.note || '',
-        ...(i.unit && i.count ? { unit: i.unit, count: r1(i.count) } : {})
+        ...(i.unit && i.count ? { unit: i.unit, count: r1(i.count) } : {}),
+        ...nxOut(i)
       }))
     };
     fav.u = Date.now();
@@ -2731,6 +2888,7 @@ function renderItems(){
         '<div class="num m"><label>C g</label><input data-f="c" type="number" step="any" inputmode="decimal" value="' + it.c + '"></div>' +
         '<div class="num m"><label>F g</label><input data-f="f" type="number" step="any" inputmode="decimal" value="' + it.f + '"></div>' +
       '</div>' +
+      '<div class="i-x">' + nxLine(it) + '</div>' +
       (it.note ? '<div class="i-note">' + esc(it.note) + '</div>' : '') +
     '</div>'
   ).join('');
@@ -2746,8 +2904,10 @@ function renderItems(){
 }
 function updateMealFooter(){
   const t = sumItems(session.items);
+  const x = nxLine(t);
   $('#mealTotal').innerHTML = '<b>' + nf.format(r0(t.kcal)) + ' kcal</b>' +
-    'P ' + r0(t.p) + ' &middot; C ' + r0(t.c) + ' &middot; F ' + r0(t.f);
+    'P ' + r0(t.p) + ' &middot; C ' + r0(t.c) + ' &middot; F ' + r0(t.f) +
+    (x ? '<div class="i-x" style="margin-top:2px">' + x + '</div>' : '');
 }
 
 $('#items').addEventListener('input', e => {
@@ -2780,6 +2940,8 @@ $('#items').addEventListener('input', e => {
       it.p = r1(it.grams * it.basis.p);
       it.c = r1(it.grams * it.basis.c);
       it.f = r1(it.grams * it.basis.f);
+      NX_KEYS.forEach(k => { if (it.basis[k] != null) it[k] = nxRound(k, it.grams * it.basis[k]); });
+      const xl = $('.i-x', row); if (xl) xl.textContent = nxLine(it);
       $$('.num input', row).forEach(inp => {
         const g = inp.dataset.f;
         if (g !== 'grams' && g !== 'count') inp.value = it[g];
@@ -2875,12 +3037,14 @@ $('#foodAdd').addEventListener('click', () => {
   const n = parseFloat($('#foodN').value) || 0;
   const k = g / 100;
   const byServe = $('#foodUnit').value === 'serve';
-  const item = {
+  const pn = {};
+  NX_KEYS.forEach(x => { pn[x] = nxRound(x, (Number(f.per100[x]) || 0) * k); });
+  const item = Object.assign({
     id: uid(), name: f.name, grams: r1(g),
     kcal: r0(f.per100.kcal * k), p: r1(f.per100.p * k), c: r1(f.per100.c * k), f: r1(f.per100.f * k),
-    note: 'From the label',
-    basis: { kcal: f.per100.kcal / 100, p: f.per100.p / 100, c: f.per100.c / 100, f: f.per100.f / 100 }
-  };
+    note: 'From the label', hasX: NX_KEYS.some(x => Number(f.per100[x]) > 0),
+    basis: Object.assign({ kcal: f.per100.kcal / 100, p: f.per100.p / 100, c: f.per100.c / 100, f: f.per100.f / 100 }, nxBasis(f.per100, 100))
+  }, pn);
   if (Number(f.serving_g) > 0) withUnit(item, f.serving_label, byServe ? n : g / Number(f.serving_g));
   session.items.push(item);
   const foods = getFoods();
@@ -2906,6 +3070,9 @@ function fillLabelForm(v){
   $('#lblP').value = r1(v.p);
   $('#lblC').value = r1(v.c);
   $('#lblF').value = r1(v.f);
+  $('#lblNa').value = Number(v.na) > 0 ? r0(v.na) : '';
+  $('#lblSug').value = Number(v.sug) > 0 ? r1(v.sug) : '';
+  $('#lblFib').value = Number(v.fib) > 0 ? r1(v.fib) : '';
   $('#lblForm').hidden = false;
 }
 $('#foodEdit').addEventListener('click', () => {
@@ -2913,7 +3080,8 @@ $('#foodEdit').addEventListener('click', () => {
   if (!f) return;
   foodEditId = f.id;
   fillLabelForm({ name: f.name, serving_label: f.serving_label, serving_g: f.serving_g,
-    kcal: f.per100.kcal, p: f.per100.p, c: f.per100.c, f: f.per100.f });
+    kcal: f.per100.kcal, p: f.per100.p, c: f.per100.c, f: f.per100.f,
+    na: f.per100.na, sug: f.per100.sug, fib: f.per100.fib });
 });
 $('#lblSave').addEventListener('click', () => {
   const name = $('#lblName').value.trim();
@@ -2924,7 +3092,8 @@ $('#lblSave').addEventListener('click', () => {
     id: foodEditId || uid(), name: name,
     serving_g: Math.max(0, parseFloat($('#lblG').value) || 0),
     serving_label: $('#lblUnit').value.trim() || 'serve',
-    per100: { kcal: r0(kcal), p: r1($('#lblP').value), c: r1($('#lblC').value), f: r1($('#lblF').value) },
+    per100: Object.assign({ kcal: r0(kcal), p: r1($('#lblP').value), c: r1($('#lblC').value), f: r1($('#lblF').value) },
+      nxOut({ na: $('#lblNa').value, sug: $('#lblSug').value, fib: $('#lblFib').value })),
     lastUsed: Date.now()
   };
   const foods = getFoods();
@@ -2954,7 +3123,8 @@ async function getFromLink(url){
     $('#linkIn').value = '';
     foodEditId = '';
     fillLabelForm({ name: j.name, serving_label: j.serving_label, serving_g: Number(j.serving_g) || 0,
-      kcal: j.kcal_100g, p: j.protein_100g, c: j.carbs_100g, f: j.fat_100g });
+      kcal: j.kcal_100g, p: j.protein_100g, c: j.carbs_100g, f: j.fat_100g,
+      na: j.sodium_mg_100g, sug: j.sugars_100g, fib: j.fibre_100g });
     if (j.source) toast('From ' + j.source + ' \u00b7 check, then save');
   } catch(err) {
     if (!session || err.name === 'AbortError') return;
@@ -2989,7 +3159,8 @@ async function scanLabel(file){
     }
     foodEditId = '';
     fillLabelForm({ name: j.name, serving_label: j.serving_label, serving_g: Number(j.serving_g) || 0,
-      kcal: j.kcal_100g, p: j.protein_100g, c: j.carbs_100g, f: j.fat_100g });
+      kcal: j.kcal_100g, p: j.protein_100g, c: j.carbs_100g, f: j.fat_100g,
+      na: j.sodium_mg_100g, sug: j.sugars_100g, fib: j.fibre_100g });
   } catch(err) {
     if (!session || err.name === 'AbortError') return;
     backToFoods();
@@ -3020,7 +3191,10 @@ function offNut(nu){
     kcal: r0(k),
     p: r1(nu['proteins_100g']),
     c: r1(nu['carbohydrates_100g']),
-    f: r1(nu['fat_100g'])
+    f: r1(nu['fat_100g']),
+    na: r0((Number(nu['sodium_100g']) || 0) * 1000),
+    sug: r1(nu['sugars_100g']),
+    fib: r1(nu['fiber_100g'])
   };
 }
 async function searchProducts(){
@@ -3076,11 +3250,12 @@ $('#prodList').addEventListener('click', e => {
   if (!p) return;
   const name = p.brand && !p.name.toLowerCase().includes(p.brand.toLowerCase())
     ? p.brand + ' ' + p.name : p.name;
-  session.items.push({
+  session.items.push(Object.assign({
     id: uid(), name: name, grams: 100,
     kcal: p.nut.kcal, p: p.nut.p, c: p.nut.c, f: p.nut.f, note: 'per 100 g, from Open Food Facts',
-    basis: { kcal: p.nut.kcal / 100, p: p.nut.p / 100, c: p.nut.c / 100, f: p.nut.f / 100 }
-  });
+    hasX: NX_KEYS.some(x => Number(p.nut[x]) > 0),
+    basis: Object.assign({ kcal: p.nut.kcal / 100, p: p.nut.p / 100, c: p.nut.c / 100, f: p.nut.f / 100 }, nxBasis(p.nut, 100))
+  }, nxOut(p.nut)));
   autoRename();
   renderItems();
   toast('Added. Set the grams you ate.');
@@ -3144,13 +3319,14 @@ const plural = (n, u) => Number(n) === 1 || /^(tbsp|tsp)$/.test(u) ? u : /(s|x|z
 function sessionItemsFrom(items){
   return items.map(i => {
     const grams = Math.max(1, Number(i.grams) || 1);
-    return inferUnit({
+    return inferUnit(Object.assign({
       id: uid(), name: i.name, grams: grams,
       kcal: Number(i.kcal) || 0, p: Number(i.p) || 0, c: Number(i.c) || 0, f: Number(i.f) || 0,
       note: i.note || '', unit: i.unit || '', count: Number(i.count) || 0,
-      basis: { kcal: (Number(i.kcal) || 0) / grams, p: (Number(i.p) || 0) / grams,
-               c: (Number(i.c) || 0) / grams, f: (Number(i.f) || 0) / grams }
-    });
+      hasX: NX_KEYS.some(k => Number(i[k]) > 0),
+      basis: Object.assign({ kcal: (Number(i.kcal) || 0) / grams, p: (Number(i.p) || 0) / grams,
+               c: (Number(i.c) || 0) / grams, f: (Number(i.f) || 0) / grams }, nxBasis(i, grams))
+    }, nxOut(i)));
   });
 }
 /* The most recently logged meal, by date then time. */
@@ -3359,8 +3535,10 @@ $('#saveMeal').addEventListener('click', () => {
     items: session.items.map(i => ({
       name: i.name || 'Item', grams: r1(i.grams), kcal: r0(i.kcal),
       p: r1(i.p), c: r1(i.c), f: r1(i.f), note: i.note || '',
-      ...(i.unit && i.count ? { unit: i.unit, count: r1(i.count) } : {})
-    }))
+      ...(i.unit && i.count ? { unit: i.unit, count: r1(i.count) } : {}),
+      ...nxOut(i)
+    })),
+    ...(session.items.some(i => i.hasX) ? { nx: 1 } : {})
   };
   (log[dk] = log[dk] || []).push(entry);
   setLog(log);
@@ -4585,15 +4763,15 @@ function download(name, text, type){
 function csvCell(v){ return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }
 $('#expCsv').addEventListener('click', () => {
   const log = getLog();
-  const rows = [['date','time','meal','item','grams','kcal','protein_g','carbs_g','fat_g']];
+  const rows = [['date','time','meal','item','grams','kcal','protein_g','carbs_g','fat_g','sodium_mg','sugar_g','fibre_g','std_drinks']];
   Object.keys(log).sort().forEach(d => {
     log[d].slice().sort((a, b) => (a.time < b.time ? -1 : 1)).forEach(m => {
-      m.items.forEach(i => rows.push([d, m.time, m.name, i.name, i.grams, i.kcal, i.p, i.c, i.f]));
+      m.items.forEach(i => rows.push([d, m.time, m.name, i.name, i.grams, i.kcal, i.p, i.c, i.f, i.na || '', i.sug || '', i.fib || '', i.alc || '']));
     });
   });
   const ex = getEx();
   Object.keys(ex).sort().forEach(d => {
-    ex[d].forEach(x => rows.push([d, x.time, 'EXERCISE', x.name, x.mins + ' min', -x.kcal, '', '', '']));
+    ex[d].forEach(x => rows.push([d, x.time, 'EXERCISE', x.name, x.mins + ' min', -x.kcal, '', '', '', '', '', '', '']));
   });
   download('meal-sync-' + todayISO() + '.csv',
     rows.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
