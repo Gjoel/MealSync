@@ -10,6 +10,7 @@
 <title>Meal Sync</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect fill='%231C1B19' width='100' height='100' rx='22'/%3E%3Ccircle cx='50' cy='50' r='27' fill='none' stroke='%23FFA53D' stroke-width='9'/%3E%3Ccircle cx='50' cy='50' r='7' fill='%23FFA53D'/%3E%3C/svg%3E">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
 <script>
 /* set the theme before first paint to avoid a flash */
 try {
@@ -137,6 +138,9 @@ textarea{width:100%; resize:vertical;}
 .dd-day{display:flex; justify-content:space-between; gap:8px; width:100%; text-align:left; background:none; border:none;
   border-bottom:1px solid var(--line); padding:9px 0; font-size:14px; color:var(--porcelain);}
 .dd-day span:last-child{font-family:var(--mono); font-size:12px; color:var(--ash); flex:none;}
+.gw{text-align:center; font-family:var(--mono); font-size:12px; color:var(--ash); margin:2px auto 10px; line-height:1.6; cursor:pointer; max-width:340px;}
+.gw b{color:var(--porcelain); font-weight:600;}
+.gw .gw-d{color:var(--flame);}
 .pl-day{border:1px solid var(--line); border-radius:14px; padding:10px 12px; margin-top:10px; background:var(--iron2);}
 .pl-day.today{border-color:var(--flame);}
 .pl-head{display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap;}
@@ -538,6 +542,7 @@ select{-webkit-appearance:none; appearance:none;
 <div id="inboxCard" class="inbox" hidden></div>
 <section class="readout">
   <div class="kcal" data-m="kcal" role="button" aria-label="Where today's calories come from"><span id="dayKcal">0</span><span class="unit">kcal</span></div>
+  <div class="gw" id="gwLine" role="button" hidden></div>
   <div id="goalWrap" class="goal" hidden>
     <div id="zoneStat" class="zstat" hidden></div>
     <div id="ticks" class="ticks"></div>
@@ -1101,6 +1106,19 @@ select{-webkit-appearance:none; appearance:none;
         <option value="light">Light</option>
         <option value="dark">Dark</option>
       </select>
+    </div>
+    <div class="set-row">
+      <label for="remIn">Evening reminder</label>
+      <select id="remIn">
+        <option value="">Off</option>
+        <option value="18">6 pm</option>
+        <option value="19">7 pm</option>
+        <option value="20">8 pm</option>
+        <option value="21">9 pm</option>
+        <option value="22">10 pm</option>
+      </select>
+      <div class="set-note" id="remNote" style="margin-top:6px">A notification with how the day is going, or a nudge if nothing is logged since lunch.</div>
+      <button id="remTest" class="ghost small" hidden>Send a test now</button>
     </div>
     <div class="set-row">
       <label for="modelIn">Model</label>
@@ -2415,6 +2433,54 @@ $('#usualRow').addEventListener('click', e => {
   const c = e.target.closest('[data-usual]');
   if (c) logUsual(Number(c.dataset.usual));
 });
+/* ================= goal weight: estimated date ================= */
+/* Pace from weigh-ins when there are enough of them (4+ over 2+ weeks),
+   otherwise from the calorie gap on fully logged days in the last 2 weeks. */
+function goalPace(st){
+  const today = todayISO(), w = getWeights();
+  const pts = Object.keys(w).filter(d => d >= isoAdd(today, -35) && Number(w[d]) > 0).sort()
+    .map(d => ({ x: (new Date(d + 'T12:00:00') - new Date(today + 'T12:00:00')) / 86400000, y: Number(w[d]) }));
+  if (pts.length >= 4 && pts[pts.length - 1].x - pts[0].x >= 14) {
+    const n = pts.length, mx = pts.reduce((a, q) => a + q.x, 0) / n, my = pts.reduce((a, q) => a + q.y, 0) / n;
+    const slope = pts.reduce((a, q) => a + (q.x - mx) * (q.y - my), 0) / Math.max(1e-9, pts.reduce((a, q) => a + (q.x - mx) ** 2, 0));
+    return { pace: -slope * 7, from: 'weigh-ins' };
+  }
+  const log = getLog(), exlog = getEx();
+  const unders = lastNDaysEnding(today, 15).filter(d => d !== today && (log[d] || []).length).map(d => {
+    const kcal = dayTotals(log, d).kcal, burn = dayBurnInfo(st, d, dayBurn(exlog, d)).burn;
+    return burn && kcal >= 900 ? burn - kcal : null;
+  }).filter(v => v != null);
+  if (!unders.length) return null;
+  return { pace: unders.reduce((a, v) => a + v, 0) / unders.length * 7 / 7700, from: 'calories' };
+}
+function renderGoalLine(st){
+  const el = $('#gwLine');
+  const tW = Number(st.targetW) || 0, wNow = currentWeightKg();
+  if (!wNow) { el.hidden = true; return; }
+  el.hidden = false;
+  if (!tW) { el.innerHTML = 'Set a goal weight in You to see when you will reach it &rsaquo;'; return; }
+  const togo = wNow - tW;
+  if (togo <= 0.05) { el.innerHTML = 'Goal weight reached: <b>' + r1(wNow) + ' kg</b> (goal ' + r1(tW) + ' kg). Time to set the next one?'; return; }
+  const gp = goalPace(st);
+  if (!gp || gp.pace <= 0.05) {
+    el.innerHTML = '<b>' + r1(togo) + ' kg</b> to your ' + r1(tW) + ' kg goal &middot; no date yet: a few days 500+ under will give you one';
+    return;
+  }
+  const when = new Date(todayISO() + 'T12:00:00');
+  when.setDate(when.getDate() + Math.round(togo / gp.pace * 7));
+  const fmt = d => d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: d.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined });
+  let txt = '<b>' + r1(tW) + ' kg</b> goal &middot; on pace for <b class="gw-d">' + fmt(when) + '</b><br>' +
+    r1(togo) + ' kg to go at ' + r1(gp.pace) + ' kg/wk (from your ' + gp.from + ')';
+  if (st.targetDate) {
+    const t = new Date(st.targetDate + 'T12:00:00');
+    const wk = Math.round((t - when) / (7 * 86400000));
+    if (Math.abs(wk) >= 1) txt += ' &middot; ' + Math.abs(wk) + ' wk ' + (wk > 0 ? 'ahead of' : 'behind') + ' your ' + fmt(t) + ' target';
+    else txt += ' &middot; right on your ' + fmt(t) + ' target';
+  }
+  el.innerHTML = txt;
+}
+$('#gwLine').addEventListener('click', () => openProfile());
+
 /* ================= sleep, stress and steps from Garmin ================= */
 const fmtSleep = s => { const m = Math.round(s / 60); return Math.floor(m / 60) + 'h ' + pad(m % 60); };
 function renderWellRow(){
@@ -3036,6 +3102,7 @@ function renderDay(){
 
   renderDash(st, log, tot, burned);
   renderWellRow();
+  renderGoalLine(st);
   renderNudges(st, log, info, burned);
   renderUsualRow();
   renderPlanRow();
@@ -5258,6 +5325,7 @@ function openSettings(needKey){
   $('#garminKeyRow').hidden = true;
   updateGarminUI();
   $('#themeIn').value = (s.theme === 'dark') ? 'dark' : 'light';
+  renderReminderUI();
   const sel = $('#modelIn');
   sel.innerHTML = MODELS.map(m => '<option value="' + m[0] + '">' + m[1] + '</option>').join('');
   sel.value = currentModel();
@@ -5269,6 +5337,69 @@ function openSettings(needKey){
   if (needKey) setTimeout(() => $('#keyIn').focus(), 250);
 }
 function closeSettings(){ $('#setSheet').classList.remove('open'); }
+
+/* ================= evening reminder (Web Push) ================= */
+const VAPID_PUB = 'BPaApI0w13gv4tQQ2HfY0iCi_1_g2wEP1NYKCDZEQD63sCKa2CwTHUShI1Z1s9z5-rdgu30qKucrICYPlGN0HQ8';
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+const isStandalone = () => window.navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+let swReg = null;
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  navigator.serviceWorker.register('sw.js').then(r => { swReg = r; }).catch(() => {});
+}
+function b64u(s){
+  const b = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - s.length % 4) % 4));
+  return Uint8Array.from(b, c => c.charCodeAt(0));
+}
+function renderReminderUI(){
+  const s = getSettings();
+  $('#remIn').value = s.remHour ? String(s.remHour) : '';
+  $('#remTest').hidden = !s.remHour;
+  const note = $('#remNote');
+  if (!syncReady()) note.textContent = 'Sign in first: the reminder is sent from the server using your synced log.';
+  else if (isIOS && !isStandalone()) note.textContent = 'On iPhone: tap Share, then Add to Home Screen, open Meal Sync from the home screen icon, and turn this on there.';
+  else if (!('PushManager' in window)) note.textContent = 'This browser cannot receive notifications.';
+  else note.textContent = s.remHour ? 'On. You will get a short status around ' + (s.remHour > 12 ? s.remHour - 12 : s.remHour) + ' pm each day.'
+    : 'A notification with how the day is going, or a nudge if nothing is logged since lunch.';
+}
+async function setReminder(hour){
+  const s = getSettings(), c = syncCfg();
+  try {
+    if (!syncReady()) throw new Error('Sign in first.');
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) throw new Error(isIOS ? 'Add Meal Sync to your home screen first, then open it from there.' : 'This browser cannot receive notifications.');
+    const reg = swReg || await navigator.serviceWorker.register('sw.js');
+    await navigator.serviceWorker.ready;
+    if (!hour) {
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) { await supa('cc_push_unsub', { p_handle: c.handle, p_pass: c.pass, p_endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe(); }
+      delete s.remHour;
+      localStorage.setItem(SKEY, JSON.stringify(s));
+      toast('Reminder off');
+    } else {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') throw new Error('Notifications are blocked. Allow them for Meal Sync in your phone settings.');
+      const sub = await reg.pushManager.getSubscription() || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(VAPID_PUB) });
+      await supa('cc_push_sub', { p_handle: c.handle, p_pass: c.pass, p_sub: sub.toJSON(), p_hour: Number(hour),
+        p_tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Australia/Sydney' });
+      s.remHour = Number(hour);
+      localStorage.setItem(SKEY, JSON.stringify(s));
+      toast('Reminder set for ' + (hour > 12 ? hour - 12 : hour) + ' pm');
+    }
+  } catch(err) {
+    toast(err.message || 'Could not set the reminder');
+  }
+  renderReminderUI();
+}
+$('#remIn').addEventListener('change', () => setReminder($('#remIn').value));
+$('#remTest').addEventListener('click', async () => {
+  const c = syncCfg();
+  try {
+    const res = await fetch(c.url + '/functions/v1/remind', { method: 'POST',
+      headers: { 'content-type': 'application/json', apikey: c.key, authorization: 'Bearer ' + c.key },
+      body: JSON.stringify({ action: 'test', handle: c.handle, pass: c.pass }) });
+    const j = await res.json().catch(() => ({}));
+    toast(j.sent ? 'Test sent' : 'No phone subscribed yet. Turn the reminder off and on again.');
+  } catch(err) { toast('Could not reach the server'); }
+});
 $('#gearBtn').addEventListener('click', () => openSettings(false));
 $('#setClose').addEventListener('click', closeSettings);
 $('#keyEye').addEventListener('click', () => {

@@ -1,0 +1,13 @@
+{
+  "name": "Meal Sync",
+  "short_name": "Meal Sync",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F3F1EB",
+  "theme_color": "#F3F1EB",
+  "icons": [
+    { "src": "icons/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icons/meal-sync-icon-1024.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" }
+  ]
+}
