@@ -137,6 +137,24 @@ textarea{width:100%; resize:vertical;}
 .dd-day{display:flex; justify-content:space-between; gap:8px; width:100%; text-align:left; background:none; border:none;
   border-bottom:1px solid var(--line); padding:9px 0; font-size:14px; color:var(--porcelain);}
 .dd-day span:last-child{font-family:var(--mono); font-size:12px; color:var(--ash); flex:none;}
+.inbox{margin:4px 0 14px;}
+.ib{background:var(--iron2); border:1px solid var(--flame); border-radius:16px; padding:12px 14px; margin-bottom:8px; text-align:left;}
+.ib-txt{font-size:14px; line-height:1.45;}
+.ib-btns{display:flex; gap:8px; margin-top:10px;}
+.ib-btns button{flex:1; padding:10px 12px; font-size:14px;}
+.share{margin-top:14px;}
+.share-row{display:flex; gap:8px;}
+.share-row select{flex:1; min-width:0;}
+.ph-compare{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px;}
+.ph-compare figure{margin:0;}
+.ph-compare img{width:100%; aspect-ratio:3/4; object-fit:cover; border-radius:12px; background:var(--iron2);}
+.ph-compare figcaption{font-family:var(--mono); font-size:11px; color:var(--ash); margin-top:4px; text-align:center;}
+.ph-grid{display:flex; gap:8px; overflow-x:auto; margin-top:10px; padding-bottom:4px;}
+.ph-t{position:relative; flex:0 0 72px;}
+.ph-t img{width:72px; height:96px; object-fit:cover; border-radius:10px; display:block; cursor:pointer; border:2px solid transparent;}
+.ph-t.sel img{border-color:var(--flame);}
+.ph-t span{display:block; font-family:var(--mono); font-size:10px; color:var(--ash); text-align:center; margin-top:2px;}
+.ph-t button{position:absolute; top:2px; right:2px; width:22px; height:22px; border-radius:50%; background:rgba(0,0,0,.55); color:#fff; font-size:13px; line-height:22px; padding:0;}
 .xrow{display:flex; flex-wrap:wrap; justify-content:center; gap:6px; margin-top:10px;}
 .xrow span{font-family:var(--mono); font-size:11px; color:var(--ash); background:var(--iron2); border:1px solid var(--line);
   border-radius:999px; padding:4px 10px; cursor:pointer;}
@@ -496,6 +514,7 @@ select{-webkit-appearance:none; appearance:none;
   </button>
 </nav>
 
+<div id="inboxCard" class="inbox" hidden></div>
 <section class="readout">
   <div class="kcal" data-m="kcal" role="button" aria-label="Where today's calories come from"><span id="dayKcal">0</span><span class="unit">kcal</span></div>
   <div id="goalWrap" class="goal" hidden>
@@ -697,6 +716,23 @@ select{-webkit-appearance:none; appearance:none;
 
       <button id="cloneBtn" class="ghost small" hidden>Log again today</button>
 
+      <div id="shareWrap" class="share" hidden>
+        <div class="eyebrow">Shared meal?</div>
+        <div class="share-row">
+          <select id="shareTo"><option value="">Just me</option></select>
+          <select id="shareMine" hidden>
+            <option value="0.5">Half each</option>
+            <option value="0.6667">I had 2/3</option>
+            <option value="0.75">I had 3/4</option>
+            <option value="0.6">I had 60%</option>
+            <option value="0.4">I had 40%</option>
+            <option value="0.3333">I had 1/3</option>
+            <option value="0.25">I had 1/4</option>
+          </select>
+        </div>
+        <div id="shareNote" class="prod-note" style="padding:6px 2px 0"></div>
+      </div>
+
       <div class="sheet-foot">
         <div id="mealTotal" class="m-total"></div>
         <div class="foot-btns">
@@ -860,6 +896,22 @@ select{-webkit-appearance:none; appearance:none;
       <button id="wSave" class="ghost">Save</button>
     </div>
     <div id="trWeight"></div>
+
+    <div class="eyebrow">Waist</div>
+    <div class="w-entry">
+      <input id="waistIn" type="number" step="any" inputmode="decimal" min="0" placeholder="At your belly button">
+      <span class="w-unit">cm</span>
+      <button id="waistSave" class="ghost">Save</button>
+    </div>
+    <div id="trWaist"></div>
+    <div id="waistSum" class="set-note" style="margin-top:4px" hidden></div>
+
+    <div class="eyebrow">Progress photos</div>
+    <div class="set-note" style="margin-top:0">Kept on this phone only, never synced. Same spot, same light, once a week. Tap a photo to compare it with the latest.</div>
+    <button id="phAdd" class="ghost small" style="margin-top:8px">Add today's photo</button>
+    <input id="phIn" type="file" accept="image/*" hidden>
+    <div id="phCompare" class="ph-compare"></div>
+    <div id="phGrid" class="ph-grid"></div>
 
     <div id="compSec" hidden>
       <div class="eyebrow">Competition, last 7 days</div>
@@ -1104,6 +1156,9 @@ function setEx(x){ localStorage.setItem(EKEY, JSON.stringify(x)); pushSoon(); }
 const DKEY = 'ml.foods';
 /* Ids of deleted meals, exercise, favourites and foods, so a merge never brings them back. */
 const XKEY = 'ml.deleted';
+const BKEY = 'ml.body';
+function getBody(){ try { return JSON.parse(localStorage.getItem(BKEY)) || {}; } catch(e){ return {}; } }
+function setBody(b){ localStorage.setItem(BKEY, JSON.stringify(b)); pushSoon(); }
 function getDeleted(){ try { return JSON.parse(localStorage.getItem(XKEY)) || {}; } catch(e){ return {}; } }
 function markDeleted(id){
   if (!id) return;
@@ -2368,6 +2423,10 @@ function renderNudges(st, log, info, burned){
     const daysSince = lastW ? Math.round((new Date(todayISO() + 'T12:00:00') - new Date(lastW + 'T12:00:00')) / 86400000) : 99;
     if (daysSince >= 4) list.push([warn, (lastW ? 'Last weigh-in was ' + daysSince + ' days ago.' : 'No weigh-ins yet.') +
       ' A morning weigh-in in Trends keeps your targets and pace accurate.']);
+    const bd = getBody(), lastWaist = Object.keys(bd).filter(d => Number(bd[d].waist) > 0).sort().pop();
+    const waistAgo = lastWaist ? Math.round((new Date(todayISO() + 'T12:00:00') - new Date(lastWaist + 'T12:00:00')) / 86400000) : 99;
+    if (lastW === todayISO() && waistAgo >= 7) list.push([warn, 'Weighed in, nice. ' + (lastWaist ? 'Your last waist measurement was ' + waistAgo + ' days ago.' : 'Add a waist measurement too.') +
+      ' Waist and a weekly photo (both in Trends) show fat loss the scale can hide.']);
     const y = isoAdd(todayISO(), -1);
     if (!(log[y] || []).length && Object.keys(log).some(d => d < y)) list.push([warn, 'Nothing logged yesterday. Tap the chart to open it and add what you had.']);
   }
@@ -2856,6 +2915,9 @@ function openSheet(){
   $('#prodList').innerHTML = '';
   $('#foodWrap').hidden = true;
   $('#lblForm').hidden = true;
+  $('#shareTo').value = '';
+  renderShareUI();
+  if (syncReady() && !partnersFetched) refreshPartners();
   updateAddPhotoLabel();
 }
 function closeSheet(){
@@ -2904,6 +2966,7 @@ function renderItems(){
 }
 function updateMealFooter(){
   const t = sumItems(session.items);
+  if ($('#shareTo').value) updateShareNote();
   const x = nxLine(t);
   $('#mealTotal').innerHTML = '<b>' + nf.format(r0(t.kcal)) + ' kcal</b>' +
     'P ' + r0(t.p) + ' &middot; C ' + r0(t.c) + ' &middot; F ' + r0(t.f) +
@@ -3540,6 +3603,14 @@ $('#saveMeal').addEventListener('click', () => {
     })),
     ...(session.items.some(i => i.hasX) ? { nx: 1 } : {})
   };
+  const shareTo = !$('#shareWrap').hidden && $('#shareTo').value;
+  if (shareTo) {
+    const k = shareFrac();
+    const theirs = { name: entry.name, time: entry.time, items: entry.items.map(i => scaleItem(i, 1 - k)) };
+    entry.items = entry.items.map(i => scaleItem(i, k));
+    entry.shared = { with: shareTo, mine: k };
+    sendShare({ id: uid(), to: shareTo, day: dk, meal: theirs });
+  }
   (log[dk] = log[dk] || []).push(entry);
   setLog(log);
   viewDate = dk;
@@ -3850,6 +3921,8 @@ function renderTrends(){
   days.forEach((d, i) => { const v = Number(w[d]); if (v > 0) wPts.push({ i: i, v: v }); });
   $('#trWeight').innerHTML = chartLine(wPts, n, labels, Number(st.targetW) || 0);
   $('#wIn').value = (Number(w[todayISO()]) > 0) ? w[todayISO()] : '';
+  renderWaist(days, n, labels);
+  renderPhotos();
 
   const loggedIdx = days.map((d, i) => (log[d] && log[d].length) ? i : -1).filter(i => i >= 0);
   let sum = '';
@@ -3894,6 +3967,100 @@ $('#r7').addEventListener('click', () => { trRange = 7;
   $('#r7').classList.add('on'); $('#r30').classList.remove('on'); renderTrends(); });
 $('#r30').addEventListener('click', () => { trRange = 30;
   $('#r30').classList.add('on'); $('#r7').classList.remove('on'); renderTrends(); });
+function renderWaist(days, n, labels){
+  const b = getBody(), w = getWeights();
+  const pts = [];
+  days.forEach((d, i) => { const v = Number(b[d] && b[d].waist); if (v > 0) pts.push({ i: i, v: v }); });
+  $('#trWaist').innerHTML = pts.length ? chartLine(pts, n, labels, 0) : '<div class="chart-empty">Measure once a week, same time as a weigh-in.</div>';
+  $('#waistIn').value = (b[todayISO()] && b[todayISO()].waist) || '';
+  const all = Object.keys(b).filter(d => Number(b[d].waist) > 0).sort();
+  const el = $('#waistSum');
+  if (all.length < 2) { el.hidden = !all.length; el.innerHTML = all.length ? 'Waist: <b>' + r1(b[all[0]].waist) + ' cm</b>. Measure again next week to see the trend.' : ''; return; }
+  const first = all[0], last = all[all.length - 1];
+  const dw = b[last].waist - b[first].waist;
+  const since = new Date(first + 'T12:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+  let txt = 'Waist: <b>' + r1(b[last].waist) + ' cm</b>, ' + (Math.abs(dw) < 0.3 ? 'about the same as' : (dw < 0 ? 'down ' : 'up ') + r1(Math.abs(dw)) + ' cm since') + ' ' + since + '.';
+  const near = d => { const ks = Object.keys(w).filter(k => Number(w[k]) > 0 && Math.abs(new Date(k) - new Date(d)) <= 4 * 86400000)
+    .sort((x, y) => Math.abs(new Date(x) - new Date(d)) - Math.abs(new Date(y) - new Date(d))); return ks.length ? Number(w[ks[0]]) : 0; };
+  const w1 = near(first), w2 = near(last);
+  if (w1 && w2) {
+    const dk = w2 - w1;
+    if (dw <= -1 && dk > -0.5) txt += '<br>Weight barely moved over the same time (' + (dk >= 0 ? '+' : '&minus;') + r1(Math.abs(dk)) + ' kg), so the scale is hiding fat loss behind water or muscle. Keep going.';
+    else if (dw <= -1) txt += '<br>Weight is ' + (dk < 0 ? 'down ' : 'up ') + r1(Math.abs(dk)) + ' kg over the same time.';
+  }
+  el.hidden = false;
+  el.innerHTML = txt;
+}
+$('#waistSave').addEventListener('click', () => {
+  const b = getBody(), t = todayISO();
+  const v = parseFloat($('#waistIn').value);
+  if (v > 0) { b[t] = Object.assign({}, b[t], { waist: r1(v) }); setBody(b); toast('Waist saved'); }
+  else if (b[t]) { delete b[t]; setBody(b); toast('Waist cleared'); }
+  renderTrends();
+});
+
+/* ================= progress photos (IndexedDB, this device only) ================= */
+let phBefore = '';
+function phDB(){
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('mealsync-photos', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('ph', { keyPath: 'd' });
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function phTx(mode, fn){
+  const db = await phDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('ph', mode);
+    const out = fn(tx.objectStore('ph'));
+    tx.oncomplete = () => res(out && out.result !== undefined ? out.result : out);
+    tx.onerror = () => rej(tx.error);
+  });
+}
+const phAll = () => phTx('readonly', st => st.getAll()).then(a => (a || []).sort((x, y) => (x.d < y.d ? -1 : 1))).catch(() => []);
+async function renderPhotos(){
+  const list = await phAll();
+  const w = getWeights(), b = getBody();
+  const cap2 = r => new Date(r.d + 'T12:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) +
+    (Number(w[r.d]) > 0 ? ' &middot; ' + r1(w[r.d]) + ' kg' : '') + (b[r.d] && b[r.d].waist ? ' &middot; ' + r1(b[r.d].waist) + ' cm' : '');
+  if (list.length >= 2) {
+    const last = list[list.length - 1];
+    const before = list.find(r => r.d === phBefore && r.d !== last.d) || list[0];
+    $('#phCompare').innerHTML = [before, last].map(r => '<figure><img src="' + r.img + '" alt="Progress photo"><figcaption>' + cap2(r) + '</figcaption></figure>').join('');
+  } else $('#phCompare').innerHTML = '';
+  $('#phGrid').innerHTML = list.slice().reverse().map(r => '<div class="ph-t' + (r.d === phBefore ? ' sel' : '') + '"><img src="' + r.img + '" data-phpick="' + r.d + '" alt="">' +
+    '<span>' + new Date(r.d + 'T12:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) + '</span>' +
+    '<button data-phdel="' + r.d + '" aria-label="Delete photo">&times;</button></div>').join('');
+  $('#phAdd').textContent = list.some(r => r.d === todayISO()) ? "Replace today's photo" : "Add today's photo";
+}
+$('#phAdd').addEventListener('click', () => $('#phIn').click());
+$('#phIn').addEventListener('change', async e => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  try {
+    const url = URL.createObjectURL(f);
+    const img = await loadImage(url);
+    URL.revokeObjectURL(url);
+    const data = 'data:image/jpeg;base64,' + drawToJpeg(img, 1100, 0.8);
+    await phTx('readwrite', st => st.put({ d: todayISO(), img: data }));
+    toast('Photo saved on this phone');
+    renderPhotos();
+  } catch(err) { toast(err.message || 'Could not save that photo'); }
+});
+$('#phGrid').addEventListener('click', async e => {
+  const del = e.target.closest('[data-phdel]');
+  if (del) {
+    if (!confirm('Delete this progress photo?')) return;
+    await phTx('readwrite', st => st.delete(del.dataset.phdel));
+    renderPhotos();
+    return;
+  }
+  const pick = e.target.closest('[data-phpick]');
+  if (pick) { phBefore = pick.dataset.phpick; renderPhotos(); }
+});
+
 $('#wSave').addEventListener('click', () => {
   const w = getWeights();
   const raw = $('#wIn').value.trim();
@@ -4180,12 +4347,14 @@ async function mergeFromCloud(){
   const s = getSettings();
   const last = s.syncLast || {};
   const del = mergeDeleted(getDeleted(), r.deleted && r.deleted.data);
-  const before = JSON.stringify([getLog(), getEx(), getFavs(), getFoods(), getWeights()]);
+  const before = JSON.stringify([getLog(), getEx(), getFavs(), getFoods(), getWeights(), getBody()]);
   const log = mergeThumbsIntoLog(mergeDated(getLog(), r.log && r.log.data, del));
   const ex = mergeDated(getEx(), r.exercise && r.exercise.data, del);
   const favs = mergeThumbsIntoFavs(mergeList(getFavs(), r.favs && r.favs.data, del));
   const foods = mergeList(getFoods(), r.foods && r.foods.data, del);
   const weights = Object.assign({}, (r.weights && r.weights.data) || {}, getWeights());
+  const body = Object.assign({}, (r.body && r.body.data) || {}, getBody());
+  localStorage.setItem(BKEY, JSON.stringify(body));
   localStorage.setItem(XKEY, JSON.stringify(del));
   localStorage.setItem(LKEY, JSON.stringify(log));
   localStorage.setItem(EKEY, JSON.stringify(ex));
@@ -4199,14 +4368,15 @@ async function mergeFromCloud(){
   const s2 = getSettings();
   s2.syncLast = last;
   localStorage.setItem(SKEY, JSON.stringify(s2));
-  const changedHere = JSON.stringify([log, ex, favs, foods, weights]) !== before;
+  const changedHere = JSON.stringify([log, ex, favs, foods, weights, body]) !== before;
   const cloudSame = r.log && r.exercise && r.favs && r.foods && r.weights && r.deleted &&
     JSON.stringify(stripLogForSync(log)) === JSON.stringify(r.log.data) &&
     JSON.stringify(ex) === JSON.stringify(r.exercise.data) &&
     JSON.stringify(stripFavsForSync(favs)) === JSON.stringify(r.favs.data) &&
     JSON.stringify(foods) === JSON.stringify(r.foods.data) &&
     JSON.stringify(weights) === JSON.stringify(r.weights.data) &&
-    JSON.stringify(del) === JSON.stringify(r.deleted.data);
+    JSON.stringify(del) === JSON.stringify(r.deleted.data) &&
+    (!Object.keys(body).length || (r.body && JSON.stringify(body) === JSON.stringify(r.body.data)));
   return { changedHere: changedHere, needPush: !cloudSame };
 }
 
@@ -4229,7 +4399,7 @@ async function doPush(){
     const kinds = {
       log: stripLogForSync(getLog()), exercise: getEx(), weights: getWeights(),
       favs: stripFavsForSync(getFavs()), profile: profileLite(getSettings()),
-      foods: getFoods(), deleted: getDeleted()
+      foods: getFoods(), deleted: getDeleted(), body: getBody()
     };
     for (const k of Object.keys(kinds)) {
       await supa('cc_push_state', { p_handle: c.handle, p_pass: c.pass, p_kind: k, p_data: kinds[k], p_updated: stamp });
@@ -4240,6 +4410,7 @@ async function doPush(){
     Object.keys(kinds).forEach(k => { s.syncLast[k] = stamp; });
     localStorage.setItem(SKEY, JSON.stringify(s));
     setSyncStat('Synced ' + new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }));
+    flushShares();
   } catch(err) {
     setSyncStat('Offline, will retry. ' + err.message);
     clearTimeout(retryT);
@@ -4259,6 +4430,8 @@ async function doPull(){
     }
     if (m.needPush) pushSoon();
     setSyncStat('Synced ' + new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }));
+    checkInbox();
+    if (!partnersFetched) refreshPartners();
   } catch(err) {
     setSyncStat('Could not reach sync. ' + err.message);
   }
@@ -4277,6 +4450,118 @@ document.addEventListener('visibilitychange', () => {
     clearTimeout(pushT);
     doPush();
   }
+});
+
+/* ================= shared meals ================= */
+/* Log a shared dish once: your share goes in your log, the rest goes to the
+   other person's inbox, and they add it to their log with one tap. */
+let inbox = [], partnersFetched = false;
+function partners(){ const me = syncCfg().handle; return (getSettings().partners || []).filter(h => h && h !== me); }
+async function refreshPartners(){
+  if (!syncReady()) return;
+  partnersFetched = true;
+  try {
+    const rows = await supa('cc_leaderboard', { p_from: isoDaysAgo(90) }) || [];
+    const me = syncCfg().handle;
+    const s = getSettings();
+    s.partners = [...new Set(rows.map(r => r.handle))].filter(h => h && h !== me).sort();
+    localStorage.setItem(SKEY, JSON.stringify(s));
+    if (session && $('#sheet').classList.contains('open')) renderShareUI();
+  } catch(e) { partnersFetched = false; }
+}
+function renderShareUI(){
+  const ps = partners();
+  const w = $('#shareWrap');
+  if (!syncReady() || !ps.length || !session) { w.hidden = true; return; }
+  w.hidden = false;
+  const sel = $('#shareTo');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">Just me</option>' + ps.map(h => '<option value="' + esc(h) + '">Split with ' + esc(cap(h)) + '</option>').join('');
+  sel.value = ps.includes(cur) ? cur : '';
+  updateShareNote();
+}
+function shareFrac(){ return $('#shareTo').value ? (Number($('#shareMine').value) || 0.5) : 1; }
+function updateShareNote(){
+  const to = $('#shareTo').value;
+  $('#shareMine').hidden = !to;
+  if (!to || !session) { $('#shareNote').innerHTML = ''; return; }
+  const t = sumItems(session.items), k = shareFrac();
+  $('#shareNote').innerHTML = 'Whole meal ' + nf.format(r0(t.kcal)) + ' kcal. You log <b>' + nf.format(r0(t.kcal * k)) + '</b>, and ' +
+    esc(cap(to)) + ' gets <b>' + nf.format(r0(t.kcal * (1 - k))) + ' kcal</b> to add to their log.';
+}
+$('#shareTo').addEventListener('change', updateShareNote);
+$('#shareMine').addEventListener('change', updateShareNote);
+function scaleItem(i, k){
+  const o = Object.assign({}, i);
+  ['grams', 'kcal', 'p', 'c', 'f', 'na', 'sug', 'fib', 'alc', 'count'].forEach(x => {
+    if (o[x] == null || o[x] === '') return;
+    o[x] = (x === 'kcal' || x === 'na') ? r0(Number(o[x]) * k) : r1(Number(o[x]) * k);
+  });
+  return o;
+}
+function getShareQ(){ try { return JSON.parse(localStorage.getItem('ml.shareQ')) || []; } catch(e){ return []; } }
+async function sendShare(job, quiet){
+  const c = syncCfg();
+  try {
+    const r = await supa('cc_share_meal', { p_handle: c.handle, p_pass: c.pass, p_to: job.to, p_day: job.day, p_meal: job.meal });
+    if (!quiet) toast(r === 'ok' ? 'Sent ' + cap(job.to) + ' their share' : 'Could not share: ' + r);
+    return true;
+  } catch(e) {
+    const q = getShareQ();
+    if (!q.some(x => x.id === job.id)) { q.push(job); localStorage.setItem('ml.shareQ', JSON.stringify(q)); }
+    if (!quiet) toast('Offline: ' + cap(job.to) + "'s share will send when you're back online");
+    return false;
+  }
+}
+async function flushShares(){
+  const q = getShareQ();
+  if (!q.length) return;
+  localStorage.setItem('ml.shareQ', '[]');
+  for (const job of q) await sendShare(job, true);
+}
+async function checkInbox(){
+  if (!syncReady()) return;
+  const c = syncCfg();
+  try { inbox = await supa('cc_inbox_pull', { p_handle: c.handle, p_pass: c.pass }) || []; }
+  catch(e) { return; }
+  renderInbox();
+}
+function renderInbox(){
+  const el = $('#inboxCard');
+  if (!inbox.length) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  el.innerHTML = inbox.map((x, i) => {
+    const t = sumItems((x.meal && x.meal.items) || []);
+    return '<div class="ib"><div class="ib-txt"><b>' + esc(cap(x.from_handle)) + '</b> shared <b>' + esc((x.meal && x.meal.name) || 'a meal') +
+      '</b> with you &middot; ' + dateLabel(String(x.day).slice(0, 10)) + '<br>Your share: <b>' + nf.format(r0(t.kcal)) + ' kcal</b>, ' + r0(t.p) + ' g protein</div>' +
+      '<div class="ib-btns"><button class="primary" data-ib-add="' + i + '">Add to my log</button><button class="ghost" data-ib-no="' + i + '">Not mine</button></div></div>';
+  }).join('');
+}
+$('#inboxCard').addEventListener('click', async e => {
+  const add = e.target.closest('[data-ib-add]'), no = e.target.closest('[data-ib-no]');
+  const btn = add || no;
+  if (!btn) return;
+  const x = inbox[Number(btn.dataset.ibAdd != null ? btn.dataset.ibAdd : btn.dataset.ibNo)];
+  if (!x) return;
+  inbox = inbox.filter(y => y !== x);
+  renderInbox();
+  if (add) {
+    const day = String(x.day).slice(0, 10);
+    const m = x.meal || {};
+    const items = (m.items || []).map(i => Object.assign({}, i));
+    const log = getLog();
+    (log[day] = log[day] || []).push({
+      id: uid(), u: Date.now(), name: m.name || 'Shared meal', time: m.time || nowHM(), thumb: '', favId: '',
+      confidence: '', assumptions: [], items: items, shared: { from: x.from_handle },
+      ...(items.some(i => NX_KEYS.some(k => Number(i[k]) > 0)) ? { nx: 1 } : {})
+    });
+    setLog(log);
+    viewDate = day;
+    renderDay();
+    toast('Added to ' + dateLabel(day));
+  }
+  const c = syncCfg();
+  try { await supa('cc_inbox_take', { p_handle: c.handle, p_pass: c.pass, p_id: x.id }); } catch(err) {}
 });
 
 /* competition leaderboard */
@@ -4692,7 +4977,12 @@ $('#authAction').addEventListener('click', async () => {
     localStorage.removeItem(FKEY);
     localStorage.removeItem(DKEY);
     localStorage.removeItem(XKEY);
+    localStorage.removeItem(BKEY);
+    localStorage.removeItem('ml.plan');
+    localStorage.removeItem('ml.shareQ');
+    inbox = []; renderInbox();
     const s = getSettings();
+    delete s.partners;
     ['goal','pgoal','defMin','defMax','sex','age','heightCm','weightKg','activity','targetW','targetDate',
      'syncHandle','syncPass','syncLast','skipAuth','strava','stravaChecked','garmin','garminChecked'].forEach(k => delete s[k]);
     localStorage.removeItem(GARMIN_SKIP);
