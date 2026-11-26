@@ -233,8 +233,9 @@ Deno.serve(async (req) => {
         throw e;
       }
 
+      // daysOnly: a history backfill that only wants the daily wellness numbers.
       // deno-lint-ignore no-explicit-any
-      const list: any[] = Array.isArray(raw) ? raw
+      const list: any[] = b.daysOnly ? [] : Array.isArray(raw) ? raw
         : (raw && (raw.activities || raw.activityList || raw.data)) || [];
       // Field names only, no personal data: helps diagnose Garmin format changes.
       console.log('garmin activities', list.length, 'keys:', Object.keys(list[0] || {}).slice(0, 40).join(','));
